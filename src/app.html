@@ -1,0 +1,1376 @@
+<title>Stock-to-Part Estimator</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Saira+Condensed:wght@500;600;700&display=swap">
+<style>
+/* Layout: shop-floor traveller — inputs rail on the left, machine viewport centre, operation sheet and quote below. */
+:root {
+  --bg: #eceff3; --panel: #ffffff; --panel-2: #f5f7fa; --ink: #141c25; --muted: #5a6776; --line: #d6dce3;
+  --accent: #2242b4; --accent-soft: #e3e8fb; --accent-ink: #ffffff; --tool: #d9821a; --good: #1d7d55; --warn: #a8650b; --bad: #b3372b;
+  --vp-bg: #1a222b; --vp-bg-2: #26313d; --vp-ink: #dfe6ee; --vp-muted: #9aa8b6;
+  --f-display: "Saira Condensed", "Arial Narrow", "Roboto Condensed", sans-serif;
+  --f-body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  --r: 6px;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0e1318; --panel: #151c23; --panel-2: #1a222b; --ink: #e2e8ee; --muted: #93a1ae; --line: #27323d;
+  --accent: #8aa2ff; --accent-soft: #1e2a4d; --accent-ink: #0e1318; --tool: #f0a23c; --good: #4cc08a; --warn: #e3a64a; --bad: #ef7d70;
+  --vp-bg: #0b1015; --vp-bg-2: #18212a; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #0e1318; --panel: #151c23; --panel-2: #1a222b; --ink: #e2e8ee; --muted: #93a1ae; --line: #27323d;
+  --accent: #8aa2ff; --accent-soft: #1e2a4d; --accent-ink: #0e1318; --tool: #f0a23c; --good: #4cc08a; --warn: #e3a64a; --bad: #ef7d70;
+  --vp-bg: #0b1015; --vp-bg-2: #18212a; color-scheme: dark }
+* { box-sizing: border-box }
+body { background: var(--bg); color: var(--ink); font: 14px/1.5 var(--f-body); }
+.wrap { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 14px 40px; max-width: 1560px; margin: 0 auto; }
+header.top { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; padding-bottom: 12px; border-bottom: 1px solid var(--line); margin-bottom: 16px }
+header.top h1 { font: 700 28px/1 var(--f-display); letter-spacing: .01em; margin: 0; text-transform: uppercase }
+header.top h1 span { color: var(--accent) }
+header.top p { margin: 0; color: var(--muted); max-width: 70ch }
+.mono, .num { font-family: var(--f-mono); font-variant-numeric: tabular-nums }
+.label { font: 600 11px/1.2 var(--f-body); text-transform: uppercase; letter-spacing: .08em; color: var(--muted) }
+h2 { font: 600 19px/1.2 var(--f-display); text-transform: uppercase; letter-spacing: .03em; margin: 0 0 10px; text-wrap: balance }
+h3 { font: 600 14px/1.3 var(--f-body); margin: 0 0 6px }
+.grid { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 16px; align-items: start }
+@media (max-width: 980px) { .grid { grid-template-columns: minmax(0, 1fr) } }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); padding: 14px; min-width: 0 }
+.rail { display: flex; flex-direction: column; gap: 14px }
+.field { display: flex; flex-direction: column; gap: 5px }
+.field + .field { margin-top: 10px }
+select, input[type=number], input[type=text], textarea { font: inherit; color: var(--ink); background: var(--panel-2); border: 1px solid var(--line); border-radius: 4px; padding: 7px 8px; width: 100%; min-width: 0 }
+textarea { font: 12px/1.4 var(--f-mono); min-height: 120px }
+select:focus-visible, input:focus-visible, button:focus-visible, textarea:focus-visible, .drop:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px }
+button { font: 500 13px/1 var(--f-body); border-radius: 4px; padding: 8px 12px; border: 1px solid var(--line); background: var(--panel-2); color: var(--ink); cursor: pointer }
+button:hover { border-color: var(--accent) }
+button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent) }
+button.ghost { background: transparent }
+button:disabled { opacity: .5; cursor: default }
+.drop { border: 1.5px dashed var(--line); border-radius: var(--r); padding: 18px 12px; text-align: center; cursor: pointer; background: var(--panel-2); transition: border-color .15s, background .15s }
+.drop.over { border-color: var(--accent); background: var(--accent-soft) }
+.drop strong { display: block; font-weight: 600 }
+.drop small { color: var(--muted) }
+.samples { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px }
+.samples button { padding: 6px 9px; font-size: 12px }
+.chip { display: inline-flex; align-items: center; gap: 5px; font: 600 11px/1 var(--f-body); letter-spacing: .04em; text-transform: uppercase; padding: 4px 7px; border-radius: 3px; background: var(--accent-soft); color: var(--accent) }
+.chip.tool { background: color-mix(in srgb, var(--tool) 18%, transparent); color: var(--tool) }
+.chip.good { background: color-mix(in srgb, var(--good) 16%, transparent); color: var(--good) }
+.chip.warn { background: color-mix(in srgb, var(--warn) 16%, transparent); color: var(--warn) }
+.status { font-size: 12.5px; color: var(--muted); min-height: 1.4em }
+.status.err { color: var(--bad) }
+.kv { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; font-size: 13px }
+.kv dt { color: var(--muted) }
+.kv dd { margin: 0; text-align: right; font-family: var(--f-mono); font-variant-numeric: tabular-nums }
+
+/* viewport */
+.stage { position: relative; border-radius: var(--r); overflow: hidden; background: radial-gradient(120% 90% at 50% 10%, var(--vp-bg-2), var(--vp-bg)); border: 1px solid var(--line); aspect-ratio: 16 / 9; max-width: 100%; min-height: 320px }
+.stage canvas { display: block; width: 100%; height: 100% }
+.hud { position: absolute; left: 12px; top: 10px; right: 12px; display: flex; justify-content: space-between; gap: 10px; pointer-events: none; color: var(--vp-ink) }
+.hud .op { font: 600 18px/1.15 var(--f-display); text-transform: uppercase; letter-spacing: .03em; text-shadow: 0 1px 2px rgba(0,0,0,.5) }
+.hud .sub { font: 12px/1.3 var(--f-mono); color: var(--vp-muted) }
+.hud .right { text-align: right }
+.vp-msg { position: absolute; inset: 0; display: grid; place-items: center; color: var(--vp-muted); font: 13px var(--f-mono); pointer-events: none; text-align: center; padding: 20px }
+.transport { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 10px }
+.transport .tl { flex: 1 1 260px; min-width: 0; position: relative; height: 30px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 4px; cursor: pointer; overflow: hidden }
+.tl .seg { position: absolute; top: 0; bottom: 0; border-right: 1px solid var(--panel) }
+.tl .head { position: absolute; top: -2px; bottom: -2px; width: 2px; background: var(--ink); pointer-events: none }
+.tl .seg.k-cut { background: color-mix(in srgb, var(--tool) 45%, transparent) }
+.tl .seg.k-mill { background: color-mix(in srgb, var(--accent) 40%, transparent) }
+.tl .seg.k-hole { background: color-mix(in srgb, var(--accent) 70%, transparent) }
+.tl .seg.k-turn { background: color-mix(in srgb, var(--good) 45%, transparent) }
+.tl .seg.k-setup { background: color-mix(in srgb, var(--muted) 35%, transparent) }
+.speed { display: flex; gap: 2px }
+.speed button { padding: 6px 8px; font: 12px var(--f-mono) }
+.speed button[aria-pressed=true] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent) }
+
+/* results */
+.results { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 16px; margin-top: 16px }
+@media (max-width: 1180px) { .results { grid-template-columns: minmax(0, 1fr) } }
+.quote-head { display: flex; justify-content: space-between; gap: 14px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 12px }
+.price { font: 700 40px/1 var(--f-display); letter-spacing: .01em }
+.price small { font: 500 14px var(--f-body); color: var(--muted); margin-left: 6px; letter-spacing: 0 }
+.facts { display: flex; gap: 18px; flex-wrap: wrap; font-size: 13px }
+.facts div { display: flex; flex-direction: column; gap: 2px }
+.facts b { font: 500 15px var(--f-mono); font-variant-numeric: tabular-nums }
+.bar { display: flex; height: 12px; border-radius: 3px; overflow: hidden; margin: 12px 0 6px; background: var(--panel-2) }
+.bar i { display: block; height: 100% }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--muted) }
+.legend span::before { content: ""; display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 5px; background: var(--c); vertical-align: -1px }
+.tablebox { overflow-x: auto; margin-top: 6px }
+table { width: 100%; border-collapse: collapse; font-size: 13px }
+th { text-align: left; font: 600 11px/1.2 var(--f-body); text-transform: uppercase; letter-spacing: .06em; color: var(--muted); padding: 8px 8px 6px; border-bottom: 1px solid var(--line); white-space: nowrap }
+td { padding: 7px 8px; border-bottom: 1px solid var(--line); vertical-align: top }
+td.r, th.r { text-align: right; font-family: var(--f-mono); font-variant-numeric: tabular-nums; white-space: nowrap }
+tr.setup td { background: var(--panel-2); font: 600 12px var(--f-body); color: var(--muted); text-transform: uppercase; letter-spacing: .05em }
+tr.pick { cursor: pointer }
+tr.pick:hover td { background: var(--panel-2) }
+tr.pick.on td { background: var(--accent-soft) }
+tr.pick.on td:first-child { box-shadow: inset 3px 0 0 var(--accent) }
+tr.total td { font-weight: 600; border-bottom: none }
+.notes { margin: 10px 0 0; padding-left: 18px; color: var(--muted); font-size: 13px }
+.notes li + li { margin-top: 4px }
+.stack { display: flex; flex-direction: column; gap: 16px; min-width: 0 }
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center }
+.muted { color: var(--muted) }
+details.rates { margin-top: 16px }
+details.rates > summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 10px; justify-content: space-between; flex-wrap: wrap }
+details.rates > summary::-webkit-details-marker { display: none }
+details.rates > summary h2 { margin: 0 }
+details.rates > summary::after { content: "Show rate tables ▾"; font-size: 13px; color: var(--accent) }
+details.rates[open] > summary::after { content: "Hide ▴" }
+.tabs { display: flex; gap: 4px; flex-wrap: wrap; margin: 14px 0 10px; border-bottom: 1px solid var(--line) }
+.tabs button { border: none; background: none; border-bottom: 2px solid transparent; border-radius: 0; padding: 8px 10px; color: var(--muted) }
+.tabs button[aria-selected=true] { color: var(--ink); border-bottom-color: var(--accent) }
+table.edit input { padding: 4px 6px; font: 12.5px var(--f-mono); text-align: right; min-width: 64px }
+table.edit td { padding: 4px 6px }
+.src { font-size: 12px; color: var(--muted); margin-top: 10px; max-width: 90ch }
+.src a { color: var(--accent) }
+.case { margin-top: 16px; padding: 22px }
+.case .kicker { font: 600 11px/1.2 var(--f-body); letter-spacing: .1em; text-transform: uppercase; color: var(--accent) }
+.case h2.big { font: 700 30px/1.05 var(--f-display); text-transform: uppercase; margin: 6px 0 8px }
+.case .lede { max-width: 72ch; color: var(--muted); margin: 0 0 18px }
+.case-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 18px 24px }
+.case section h3 { font: 600 15px/1.2 var(--f-display); text-transform: uppercase; letter-spacing: .04em; margin: 0 0 8px; color: var(--ink) }
+.case p, .case li { max-width: 68ch }
+.case ol, .case ul { padding-left: 18px; margin: 0 }
+.case li + li { margin-top: 5px }
+.stat-row { display: flex; gap: 22px; flex-wrap: wrap; margin: 0 0 18px; padding: 12px 0; border-block: 1px solid var(--line) }
+.stat-row div { display: flex; flex-direction: column; gap: 2px }
+.stat-row b { font: 600 22px/1 var(--f-display) }
+.hbar { display: grid; grid-template-columns: 110px minmax(0, 1fr) 76px; gap: 6px 10px; align-items: center; font-size: 13px }
+.hbar .trk { height: 14px; background: var(--panel-2); border-radius: 2px; overflow: hidden }
+.hbar .trk i { display: block; height: 100%; background: var(--accent) }
+.hbar .trk i.alt { background: color-mix(in srgb, var(--muted) 55%, transparent) }
+.hbar .v { text-align: right; font-family: var(--f-mono); font-variant-numeric: tabular-nums }
+.toast { position: fixed; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); background: var(--ink); color: var(--bg); padding: 9px 14px; border-radius: 4px; font-size: 13px; opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 20 }
+.toast.on { opacity: 1 }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important } }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <h1>Stock<span>→</span>Part</h1>
+    <p>Upload a STEP file of a metal part. The planner reads its geometry, picks the cheapest process route, sizes the stock, prices it at Indian job-shop rates and simulates the machining from raw stock to finished part.</p>
+  </header>
+
+  <div class="grid">
+    <aside class="rail">
+      <section class="card">
+        <h2>1 · Part</h2>
+        <div class="drop" id="drop" tabindex="0" role="button" aria-label="Upload STEP file">
+          <strong>Drop a STEP file</strong>
+          <small>.step / .stp · or click to browse</small>
+          <input type="file" id="file" accept=".step,.stp,.STEP,.STP" hidden>
+        </div>
+        <div class="samples" aria-label="Sample parts">
+          <span class="label" style="width:100%">Or try a test part</span>
+          <button data-sample="slider">Slider block · case study</button>
+          <button data-sample="plate">Mounting plate</button>
+          <button data-sample="bracket">L-bracket</button>
+          <button data-sample="shaft">Flanged sleeve</button>
+          <button data-sample="bolt">Bolt</button>
+          <button data-sample="rod">Rod</button>
+        </div>
+        <div class="field" id="bodyField" hidden style="margin-top:12px">
+          <label class="label" for="body">Body in this file</label>
+          <select id="body"></select>
+        </div>
+        <p class="status" id="status" aria-live="polite">Loading the STEP reader…</p>
+      </section>
+
+      <section class="card">
+        <h2>2 · Order</h2>
+        <div class="field"><label class="label" for="mat">Material</label><select id="mat"></select></div>
+        <div class="field"><label class="label" for="qty">Quantity</label><input type="number" id="qty" min="1" step="1" value="10"></div>
+        <div class="field"><label class="label" for="tol">Tolerance class</label><select id="tol"></select></div>
+        <div class="field"><label class="label" for="fin">Surface finish</label><select id="fin"></select></div>
+        <div class="field"><label class="label"><input type="checkbox" id="taps" checked> Tap holes at tap-drill sizes</label></div>
+      </section>
+
+      <section class="card" id="geoCard">
+        <h2>Geometry</h2>
+        <dl class="kv" id="geo"><dt>Waiting for a part</dt><dd></dd></dl>
+      </section>
+    </aside>
+
+    <main class="stack">
+      <section>
+        <div class="stage" id="stage">
+          <div class="hud"><div><div class="op" id="hudOp">—</div><div class="sub" id="hudSub"></div></div><div class="right"><div class="sub" id="hudMc"></div><div class="sub" id="hudT"></div></div></div>
+          <div class="vp-msg" id="vpMsg">Preparing viewport…</div>
+        </div>
+        <div class="transport">
+          <button class="primary" id="play" aria-label="Play">▶ Play</button>
+          <button id="restart" aria-label="Restart">↺</button>
+          <div class="tl" id="tl" role="slider" aria-label="Simulation timeline" tabindex="0" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="head" id="tlHead"></div></div>
+          <div class="speed" id="speed" role="group" aria-label="Playback speed">
+            <button data-s="0.5" aria-pressed="false">½×</button><button data-s="1" aria-pressed="true">1×</button><button data-s="2" aria-pressed="false">2×</button><button data-s="4" aria-pressed="false">4×</button>
+          </div>
+          <button id="view" class="ghost">Show finished part</button>
+        </div>
+      </section>
+
+      <div class="results">
+        <div class="stack">
+          <section class="card" id="quoteCard">
+            <div class="quote-head">
+              <div>
+                <div class="label" id="routeLabel">Recommended route</div>
+                <h2 id="routeName" style="margin:4px 0 6px">—</h2>
+                <div class="price" id="price">₹—<small>per part, excl. GST</small></div>
+              </div>
+              <div class="row"><button id="copyQuote">Copy quote</button></div>
+            </div>
+            <div class="facts" id="facts"></div>
+            <div class="bar" id="costBar"></div>
+            <div class="legend" id="costLegend"></div>
+            <ul class="notes" id="routeNotes"></ul>
+          </section>
+          <section class="card">
+            <h2>Operation sheet</h2>
+            <div class="tablebox"><table id="ops"><thead><tr><th>Operation</th><th>Machine</th><th class="r">min / part</th><th class="r">₹ / part</th></tr></thead><tbody></tbody></table></div>
+          </section>
+        </div>
+        <div class="stack">
+          <section class="card">
+            <h2>Route comparison</h2>
+            <p class="muted" style="margin:0 0 4px;font-size:13px">Every feasible route is costed at your quantity. Click one to simulate and quote it.</p>
+            <div class="tablebox"><table id="routes"><thead><tr><th>Route</th><th class="r">Setups</th><th class="r">Cycle</th><th class="r">₹ / part</th></tr></thead><tbody></tbody></table></div>
+          </section>
+          <section class="card">
+            <h2>Cost breakdown</h2>
+            <div class="tablebox"><table id="breakdown"><tbody></tbody></table></div>
+          </section>
+          <section class="card">
+            <h2>Detected features</h2>
+            <div class="tablebox"><table id="feat"><thead><tr><th>Feature</th><th class="r">Size</th><th class="r">Depth</th><th>Note</th></tr></thead><tbody></tbody></table></div>
+          </section>
+        </div>
+      </div>
+
+      <article class="card case" id="caseCard" hidden></article>
+
+      <details class="card rates" id="ratesBox">
+        <summary><h2>Market rates</h2><span class="muted" style="font-size:13px" id="ratesStamp"></span></summary>
+        <div class="tabs" role="tablist" id="rateTabs">
+          <button role="tab" aria-selected="true" data-tab="materials">Materials ₹/kg</button>
+          <button role="tab" aria-selected="false" data-tab="machines">Machine hour rates</button>
+          <button role="tab" aria-selected="false" data-tab="cutting">Cutting</button>
+          <button role="tab" aria-selected="false" data-tab="process">Process times</button>
+          <button role="tab" aria-selected="false" data-tab="finishes">Finishes</button>
+          <button role="tab" aria-selected="false" data-tab="overheads">Overhead &amp; margin</button>
+        </div>
+        <div id="rateBody" class="tablebox"></div>
+        <div class="row" style="margin-top:12px">
+          <button id="ratesReset">Reset to researched rates</button>
+          <button id="ratesCopy">Copy rates as JSON</button>
+          <button id="ratesImportToggle">Import JSON</button>
+        </div>
+        <div id="importBox" hidden style="margin-top:10px">
+          <label class="label" for="importText">Paste a rates JSON exported from this page</label>
+          <textarea id="importText" spellcheck="false"></textarea>
+          <div class="row" style="margin-top:8px"><button class="primary" id="importApply">Apply rates</button></div>
+        </div>
+        <p class="src">Seeded 23 Oct 2026 from Indian supplier and job-work listings: aluminium 6061 bar ₹250–375/kg, SS 304 ₹150–325/kg, EN8 ₹55–130/kg, EN24 ₹85–120/kg, brass ₹430–755/kg, copper rod ₹840–1,370/kg, Ti Gr 5 ₹1,400–2,500/kg; VMC 3-axis job work ₹300–600/h, 4-axis ₹500–800/h, 5-axis ₹1,500–4,500/h, CNC turning ₹250–500/h; laser ₹100–500/m; wire EDM ₹0.12–0.30/mm². Surface-finish rates are estimates; confirm with your vendors. Edits are kept in this browser.</p>
+      </details>
+    </main>
+  </div>
+</div>
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+window.__errs = [];
+function __showErr(m) { window.__errs.push(m); var v = document.getElementById('vpMsg'); if (v) { v.textContent = 'Viewer error: ' + m; v.style.color = '#ff9a8a'; } }
+window.addEventListener('error', function (e) { __showErr((e.message || 'script failed') + (e.filename ? ' @ ' + e.filename.split('/').pop() + ':' + e.lineno : '')); }, true);
+window.addEventListener('unhandledrejection', function (e) { __showErr(String(e.reason && e.reason.message || e.reason)); });
+setTimeout(function () { if (!window.__simReady) __showErr('3D viewer did not start (three.js module did not load).'); }, 12000);
+</script>
+<script src="occt-import-js.js"></script>
+<script>/*ENGINE*/</script>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+const $ = s => document.querySelector(s);
+const fmt = (v, d = 0) => (isFinite(v) ? v : 0).toLocaleString('en-IN', { minimumFractionDigits: d, maximumFractionDigits: d });
+const rs = (v, d = 0) => '₹' + fmt(v, d);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+function toast(msg) { const t = $('#toast'); t.textContent = msg; t.classList.add('on'); clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove('on'), 2200); }
+
+// ---------------- rates (per-viewer, browser storage) ----------------
+const clone = o => JSON.parse(JSON.stringify(o));
+let RATES = clone(MFG.DEFAULT_RATES);
+try { const s = localStorage.getItem('s2p-rates'); if (s) { const r = JSON.parse(s); if (r && r.materials && r.machines) RATES = Object.assign(clone(MFG.DEFAULT_RATES), r); } } catch (e) {}
+function saveRates() { try { localStorage.setItem('s2p-rates', JSON.stringify(RATES)); } catch (e) {} }
+
+// ---------------- state ----------------
+const state = { occt: null, file: null, bodies: [], bodyIdx: 0, S: null, T: null, plan: null, routeId: null, name: '' };
+
+// ---------------- controls ----------------
+function fillSelects() {
+  const mat = $('#mat'), cur = mat.value;
+  const groups = {}; RATES.materials.forEach(m => (groups[m.group] = groups[m.group] || []).push(m));
+  mat.innerHTML = Object.entries(groups).map(([g, ms]) => `<optgroup label="${esc(g)}">${ms.map(m => `<option value="${m.id}">${esc(m.name)} — ₹${fmt(m.bar)}/kg</option>`).join('')}</optgroup>`).join('');
+  mat.value = cur && RATES.materials.some(m => m.id === cur) ? cur : 'al6061';
+  $('#tol').innerHTML = Object.entries(MFG.TOL).map(([k, t]) => `<option value="${k}">${esc(t.name)}</option>`).join('');
+  const fin = $('#fin'), fcur = fin.value;
+  fin.innerHTML = RATES.finishes.map(f => `<option value="${f.id}">${esc(f.name)}</option>`).join('');
+  fin.value = fcur && RATES.finishes.some(f => f.id === fcur) ? fcur : 'none';
+}
+fillSelects();
+['#mat', '#qty', '#tol', '#fin', '#taps'].forEach(s => $(s).addEventListener('change', () => replan(true)));
+$('#qty').addEventListener('input', () => replan(false));
+
+function setStatus(msg, err) { const s = $('#status'); s.textContent = msg; s.classList.toggle('err', !!err); }
+
+// ---------------- STEP loading ----------------
+async function getOcct() {
+  if (state.occt) return state.occt;
+  if (typeof occtimportjs !== 'function') throw new Error('The STEP reader did not load. Reload the page and try again.');
+  state.occt = await occtimportjs({ locateFile: f => f });
+  return state.occt;
+}
+const SAMPLES = {
+  slider: { file: 'slider-block-pa6.step', body: null, label: 'Slider block (PA6 case study)', mat: 'pa6', qty: 10, caseStudy: true },
+  plate: { file: 'as1-oc-214.stp', body: 'plate', label: 'Mounting plate (CAx-IF AS1)' },
+  bracket: { file: 'as1-oc-214.stp', body: 'l-bracket', label: 'L-bracket (CAx-IF AS1)' },
+  bolt: { file: 'as1-oc-214.stp', body: 'bolt', label: 'Bolt (CAx-IF AS1)' },
+  rod: { file: 'as1-oc-214.stp', body: 'rod', label: 'Rod (CAx-IF AS1)' },
+  shaft: { file: 'sg1-c5-214.stp', body: null, label: 'Flanged sleeve (CAx-IF SG1)' }
+};
+const fileCache = {};
+async function loadSample(key) {
+  const s = SAMPLES[key];
+  setStatus('Reading ' + s.label + '…');
+  try {
+    if (!fileCache[s.file]) { const res = await fetch(s.file); if (!res.ok) throw new Error('Sample file missing'); fileCache[s.file] = new Uint8Array(await res.arrayBuffer()); }
+    if (s.mat) { $('#mat').value = s.mat; $('#qty').value = s.qty; }
+    state.caseStudy = !!s.caseStudy;
+    await loadStep(fileCache[s.file], s.label, s.body);
+  } catch (e) { setStatus(e.message, true); }
+}
+async function loadStep(bytes, name, preferBody) {
+  const occt = await getOcct();
+  setStatus('Tessellating ' + name + '…');
+  await new Promise(r => setTimeout(r, 20));
+  let res;
+  try { res = occt.ReadStepFile(bytes, { linearUnit: 'millimeter', linearDeflectionType: 'bounding_box_ratio', linearDeflection: 0.0015, angularDeflection: 0.25 }); }
+  catch (e) { throw new Error('This file could not be read as STEP. Export it again as STEP AP203 or AP214.'); }
+  if (!res || !res.success || !res.meshes || !res.meshes.length) throw new Error('No solid bodies found in this file. Check that it contains a 3D solid, not only curves or surfaces.');
+  // dedupe identical bodies (assemblies repeat parts)
+  const bodies = []; const seen = new Set();
+  res.meshes.forEach((m, i) => {
+    const p = m.attributes.position.array; let mn = [1e18, 1e18, 1e18], mx = [-1e18, -1e18, -1e18];
+    for (let k = 0; k < p.length; k += 3) for (let a = 0; a < 3; a++) { mn[a] = Math.min(mn[a], p[k + a]); mx[a] = Math.max(mx[a], p[k + a]); }
+    const sz = mx.map((v, a) => v - mn[a]); const key = (m.name || '') + sz.map(v => v.toFixed(1)).sort().join('x') + m.index.array.length;
+    if (seen.has(key)) return; seen.add(key);
+    bodies.push({ m, name: m.name || ('Body ' + (i + 1)), sz, box: sz[0] * sz[1] * sz[2] });
+  });
+  state.bodies = bodies; state.name = name;
+  let idx = 0;
+  if (preferBody) { const j = bodies.findIndex(b => b.name.toLowerCase() === preferBody); if (j >= 0) idx = j; }
+  else bodies.forEach((b, i) => { if (b.box > bodies[idx].box) idx = i; });
+  const bf = $('#bodyField'), sel = $('#body');
+  bf.hidden = bodies.length < 2;
+  sel.innerHTML = bodies.map((b, i) => `<option value="${i}">${esc(b.name)} — ${b.sz.map(v => v.toFixed(0)).join(' × ')} mm</option>`).join('');
+  sel.value = String(idx);
+  analyseBody(idx);
+}
+$('#body').addEventListener('change', e => analyseBody(+e.target.value));
+
+function analyseBody(idx) {
+  state.bodyIdx = idx;
+  const b = state.bodies[idx];
+  setStatus('Analysing geometry…');
+  setTimeout(() => {
+    try {
+      const t0 = performance.now();
+      const T = MFG.prepareMeshes([b.m]);
+      const S = MFG.study(T);
+      state.T = T; state.S = S; state.routeId = null;
+      sim.setPart(T, S);
+      renderGeo();
+      replan(true);
+      const kind = S.turned ? 'rotational (lathe candidate)' : 'prismatic';
+      setStatus(`${state.name}${state.bodies.length > 1 ? ' · ' + b.name : ''}: ${S.features.faces} faces, ${kind}. Analysed in ${Math.round(performance.now() - t0)} ms.`);
+    } catch (e) { console.error(e); setStatus('Analysis failed: ' + e.message, true); }
+  }, 30);
+}
+
+// upload
+const drop = $('#drop'), fileIn = $('#file');
+drop.addEventListener('click', () => fileIn.click());
+drop.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileIn.click(); } });
+['dragenter', 'dragover'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('over'); }));
+['dragleave', 'drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('over'); }));
+drop.addEventListener('drop', e => { const f = e.dataTransfer.files[0]; if (f) readFile(f); });
+fileIn.addEventListener('change', () => { if (fileIn.files[0]) readFile(fileIn.files[0]); fileIn.value = ''; });
+async function readFile(f) {
+  if (!/\.(step|stp)$/i.test(f.name)) { setStatus('That is not a STEP file. Upload a .step or .stp export of the part.', true); return; }
+  try { const buf = new Uint8Array(await f.arrayBuffer()); state.caseStudy = false; await loadStep(buf, f.name, null); } catch (e) { setStatus(e.message, true); }
+}
+document.querySelectorAll('[data-sample]').forEach(b => b.addEventListener('click', () => loadSample(b.dataset.sample)));
+
+// ---------------- planning ----------------
+function opts() { return { tol: $('#tol').value, finish: $('#fin').value, noTap: !$('#taps').checked }; }
+function replan(resim) {
+  if (!state.S) return;
+  const q = Math.max(1, Math.round(+$('#qty').value || 1));
+  const P = MFG.plan(state.S, $('#mat').value, q, RATES, opts());
+  state.plan = P;
+  if (!state.routeId || !P.routes.some(r => r.id === state.routeId)) state.routeId = P.best.id;
+  renderPlan();
+  renderCase();
+  if (resim) sim.setRoute(currentRoute(), state.S, P.mat);
+}
+function currentRoute() { return state.plan.routes.find(r => r.id === state.routeId) || state.plan.best; }
+
+const MC_NAME = k => ({ saw: 'Bandsaw', laser: 'Fibre laser', waterjet: 'Waterjet', wedm: 'Wire EDM' }[k] || (RATES.machines[k] ? RATES.machines[k].name : k));
+const COST_COLORS = { material: 'var(--accent)', cutting: 'var(--tool)', machining: 'color-mix(in srgb, var(--accent) 55%, var(--good))', setup: 'color-mix(in srgb, var(--muted) 70%, transparent)', other: 'color-mix(in srgb, var(--good) 70%, transparent)', margin: 'color-mix(in srgb, var(--ink) 30%, transparent)' };
+
+function renderPlan() {
+  const P = state.plan, r = currentRoute(), c = r.cost, S = state.S;
+  $('#routeLabel').textContent = r === P.best ? 'Recommended route · lowest cost' : 'Selected route';
+  $('#routeName').textContent = r.name;
+  $('#price').innerHTML = `${rs(c.perPart)}<small>per part, excl. GST</small>`;
+  $('#facts').innerHTML = [
+    ['Incl. GST ' + RATES.overheads.gstPct + '%', rs(c.perPartGst)],
+    ['Batch of ' + fmt(P.q), rs(c.batch)],
+    ['Cycle time', fmt(c.cycleMin, 1) + ' min'],
+    ['Stock', r.stock.desc],
+    ['Stock mass', fmt(c.stockMass, 3) + ' kg'],
+    ['Material used', fmt(c.utilisation * 100, 0) + ' %']
+  ].map(([k, v]) => `<div><span class="label">${esc(k)}</span><b>${esc(v)}</b></div>`).join('');
+  const parts = [['Material', c.material, COST_COLORS.material], ['Cutting', c.cutting, COST_COLORS.cutting], ['Machining', c.machining + c.load, COST_COLORS.machining], ['Setup + CAM', c.setupPer, COST_COLORS.setup], ['Deburr, inspect, finish', c.deburr + c.treat, COST_COLORS.other], ['Overhead + margin', c.overhead + c.margin, COST_COLORS.margin]];
+  const tot = parts.reduce((s, p) => s + p[1], 0) || 1;
+  $('#costBar').innerHTML = parts.map(p => `<i style="width:${p[1] / tot * 100}%;background:${p[2]}" title="${p[0]} ${rs(p[1])}"></i>`).join('');
+  $('#costLegend').innerHTML = parts.map(p => `<span style="--c:${p[2]}">${p[0]} ${rs(p[1])}</span>`).join('');
+  const notes = [...r.notes];
+  if (S.features.holes.some(h => h.tap) && $('#taps').checked) notes.push('Holes at standard tap-drill diameters are quoted as tapped. Untick "Tap holes" if they are plain clearance holes.');
+  if (P.tol.finish > 1.3) notes.push('Tight tolerance adds slower finishing passes, reaming and extra inspection.');
+  $('#routeNotes').innerHTML = notes.map(n => `<li>${esc(n)}</li>`).join('');
+  // ops
+  let html = '', lastSetup = null;
+  for (const o of r.ops) {
+    const sl = o.setupLabel || (o.kind === 'saw' || o.kind === 'laser' ? 'Stock preparation' : '');
+    if (sl !== lastSetup) { html += `<tr class="setup"><td colspan="4">${esc(sl || 'Stock preparation')}</td></tr>`; lastSetup = sl; }
+    html += `<tr><td>${esc(o.label)}</td><td>${esc(MC_NAME(o.machine))}</td><td class="r">${o.min != null && o.kind !== 'laser' && o.kind !== 'edm' ? fmt(o.min, 2) : '—'}</td><td class="r">${rs(o.cost || 0)}</td></tr>`;
+  }
+  html += `<tr><td>Load / unload</td><td>All setups</td><td class="r">—</td><td class="r">${rs(c.load)}</td></tr>`;
+  html += `<tr><td>Setup + CAM programming, ${rs(c.setupBatch)} per batch ÷ ${fmt(P.q)}</td><td>One-time</td><td class="r">—</td><td class="r">${rs(c.setupPer)}</td></tr>`;
+  html += `<tr><td>Deburr &amp; inspect${c.treat ? ', ' + esc(P.fin.name) : ''}</td><td>Bench</td><td class="r">—</td><td class="r">${rs(c.deburr + c.treat)}</td></tr>`;
+  $('#ops tbody').innerHTML = html;
+  // routes
+  $('#routes tbody').innerHTML = P.routes.map(x => `<tr class="pick${x.id === r.id ? ' on' : ''}" data-id="${x.id}" tabindex="0"><td>${esc(x.name)}${x === P.best ? ' <span class="chip good">Lowest</span>' : ''}</td><td class="r">${x.setups.length}</td><td class="r">${fmt(x.cost.cycleMin, 1)} min</td><td class="r">${rs(x.cost.perPart)}</td></tr>`).join('');
+  document.querySelectorAll('#routes tr.pick').forEach(tr => { const go = () => { state.routeId = tr.dataset.id; renderPlan(); sim.setRoute(currentRoute(), state.S, state.plan.mat); }; tr.addEventListener('click', go); tr.addEventListener('keydown', e => { if (e.key === 'Enter') go(); }); });
+  // breakdown
+  const rows = [['Stock material', `${fmt(c.stockMass, 3)} kg × ₹${fmt(c.price)}/kg + 5% offcut`, c.material], ['Stock cutting / profile cutting', '', c.cutting], ['Machine time', `${fmt(c.cycleMin, 1)} min`, c.machining], ['Load / unload', '', c.load], ['Setup + programming (amortised)', `÷ ${fmt(P.q)}`, c.setupPer], ['Deburr & inspection', '', c.deburr], ['Surface finish', P.fin.name, c.treat], [`Overhead (${RATES.overheads.overheadPct}% of conversion)`, '', c.overhead], [`Margin (${RATES.overheads.marginPct}%)`, '', c.margin]];
+  $('#breakdown tbody').innerHTML = rows.map(([a, b, v]) => `<tr><td>${esc(a)}${b ? `<div class="muted" style="font-size:12px">${esc(b)}</div>` : ''}</td><td class="r">${rs(v, 0)}</td></tr>`).join('') +
+    `<tr class="total"><td>Price per part (excl. GST)</td><td class="r">${rs(c.perPart)}</td></tr><tr><td>GST ${RATES.overheads.gstPct}%</td><td class="r">${rs(c.gst)}</td></tr><tr class="total"><td>Batch of ${fmt(P.q)} incl. GST</td><td class="r">${rs(c.batchGst)}</td></tr>`;
+}
+
+function renderCase() {
+  const card = $('#caseCard');
+  if (!state.caseStudy || !state.S) { card.hidden = true; return; }
+  card.hidden = false;
+  const S = state.S, P0 = state.plan, A = S.A, f = S.features;
+  const best = P0.best, c = best.cost, q = P0.q;
+  const o = opts();
+  const at = (mat, qq, S2) => MFG.plan(S2 || S, mat, qq, RATES, o).best;
+  // quantity curve
+  const qs = [1, 5, 10, 25, 50, 100];
+  const qc = qs.map(qq => ({ qq, v: at(P0.mat.id, qq).cost.perPart }));
+  const qmax = Math.max(...qc.map(x => x.v));
+  // materials
+  const mats = ['pa6', 'pom', 'al6061', 'ms', 'ss304'].filter(id => RATES.materials.some(m => m.id === id));
+  const mc = mats.map(id => { const b = at(id, q); return { name: RATES.materials.find(m => m.id === id).name, v: b.cost.perPart, mat: b.cost.material, cyc: b.cost.cycleMin, mass: A.volume / 1e6 * RATES.materials.find(m => m.id === id).density }; });
+  const mmax = Math.max(...mc.map(x => x.v));
+  // orientation study
+  const ori = [0, 1, 2].map(k => { const P = MFG.studyPrismaticK(A, k); const S2 = Object.assign({}, S, { prismatic: P }); const r = MFG.plan(S2, P0.mat.id, q, RATES, o).routes.find(x => x.id === 'block-vmc'); return { k, up: ['X (176 mm side)', 'Y (channel open)', 'Z (bore axis)'][k], P, r }; });
+  const chosen = ori.reduce((a, b) => (b.P.effort < a.P.effort ? b : a));
+  const worst = ori.reduce((a, b) => (b.r.cost.perPart > a.r.cost.perPart ? b : a));
+  const bores = f.holes.filter(h => h.d > 16), cross = f.holes.filter(h => h.d <= 16);
+  const pct = v => fmt(v / c.perPart * 100, 0) + '%';
+  card.innerHTML = `
+    <div class="kicker">Case study · ${esc(P0.mat.name)} · batch of ${fmt(q)}</div>
+    <h2 class="big">Linear slider block</h2>
+    <p class="lede">A guide-rail carriage block, ${A.bbox.size.map(v => v.toFixed(1)).join(' × ')} mm, run through the planner end to end: geometry read from STEP, orientation and setups chosen, stock sized, every route costed at Bengaluru-area job-shop rates, and the cheapest one simulated above. All figures on this card update live when you change material, quantity or rates.</p>
+    <div class="stat-row">
+      <div><span class="label">Price / part</span><b>${rs(c.perPart)}</b></div>
+      <div><span class="label">Incl. GST</span><b>${rs(c.perPartGst)}</b></div>
+      <div><span class="label">Batch total</span><b>${rs(c.batchGst)}</b></div>
+      <div><span class="label">Cycle time</span><b>${fmt(c.cycleMin, 0)} min</b></div>
+      <div><span class="label">Setups</span><b>${best.setups.length}</b></div>
+      <div><span class="label">Stock used</span><b>${fmt(c.utilisation * 100, 0)}%</b></div>
+    </div>
+    <div class="case-grid">
+      <section>
+        <h3>1 · What the planner found</h3>
+        <ul>
+          <li>Base block 176 × 140 × 49 mm with four corner posts rising to 74.5 mm, leaving a 130 mm wide channel across the top.</li>
+          <li>${bores.length} × Ø${bores[0] ? bores[0].d.toFixed(2) : '—'} through bores, ${bores[0] ? bores[0].depth.toFixed(0) : '—'} mm long (${bores[0] ? (bores[0].depth / bores[0].d).toFixed(1) : '—'}×D), chamfered 2 × 45° both ends. Rail or bushing bores.</li>
+          <li>${cross.length} × Ø${cross[0] ? cross[0].d.toFixed(1) : '—'} cross holes, each cutting ${cross[0] ? cross[0].cutDepth.toFixed(0) : '—'} mm through two posts with a 130 mm air gap. M10 clearance size.</li>
+          <li>5 × 45° chamfers where the posts meet the channel floor. ${f.faces} B-rep faces, no free-form surfaces.</li>
+        </ul>
+      </section>
+      <section>
+        <h3>2 · Why the channel faces up</h3>
+        <p>The planner tried all three orientations and kept the one with the least cutter reach. With the channel open to the spindle it clears ${fmt(chosen.P.setups[0].volume / 1000, 0)} cm³ at short reach.</p>
+        <div class="hbar">${ori.map(x => `<span>${esc(x.up)}</span><span class="trk"><i class="${x === chosen ? '' : 'alt'}" style="width:${x.r.cost.perPart / worst.r.cost.perPart * 100}%"></i></span><span class="v">${rs(x.r.cost.perPart)}</span>`).join('')}</div>
+        <p class="muted" style="font-size:13px;margin-top:8px">Machining it end-on would cost ${rs(worst.r.cost.perPart - ori.find(x => x === chosen).r.cost.perPart)} more per part (${fmt(worst.r.cost.cycleMin, 0)} vs ${fmt(chosen.r.cost.cycleMin, 0)} min).</p>
+      </section>
+      <section>
+        <h3>3 · Process route</h3>
+        <ol>
+          <li>Saw a ${esc(best.stock.desc.replace('Plate cut to ', ''))} block from cast-nylon plate (${fmt(c.stockMass, 2)} kg).</li>
+          ${best.setups.map(su => { const ops = best.ops.filter(x => x.setup === su.n - 1); return `<li><b>${esc(ops[0] ? ops[0].setupLabel : 'Setup ' + su.n)}</b>: ${esc(ops.map(x => x.label.replace(/ \(L\/D.*\)/, '')).join('; '))}.</li>`; }).join('')}
+          <li>Deburr, check bore size and cross-hole alignment.</li>
+        </ol>
+      </section>
+      <section>
+        <h3>4 · Where the money goes</h3>
+        <div class="hbar">${[['Material', c.material], ['Saw cut', c.cutting], ['Machining', c.machining + c.load], ['Setup + CAM', c.setupPer], ['Deburr / inspect', c.deburr + c.treat], ['Overhead + margin', c.overhead + c.margin]].map(([k, v]) => `<span>${k}</span><span class="trk"><i style="width:${v / c.perPart * 100}%"></i></span><span class="v">${rs(v)}</span>`).join('')}</div>
+        <p class="muted" style="font-size:13px;margin-top:8px">Material is ${pct(c.material)} of the price; ${fmt((1 - c.utilisation) * 100, 0)}% of the block leaves as chips, most of it from the channel.</p>
+      </section>
+      <section>
+        <h3>5 · Price vs quantity</h3>
+        <div class="hbar">${qc.map(x => `<span>${x.qq} pc${x.qq > 1 ? 's' : ''}</span><span class="trk"><i class="${x.qq === q ? '' : 'alt'}" style="width:${x.v / qmax * 100}%"></i></span><span class="v">${rs(x.v)}</span>`).join('')}</div>
+        <p class="muted" style="font-size:13px;margin-top:8px">${best.setups.length} setups and their CAM programming are a one-time ${rs(c.setupBatch)}; past about 25 pieces the price is mostly material and spindle time.</p>
+      </section>
+      <section>
+        <h3>6 · Same part, other materials</h3>
+        <div class="hbar">${mc.map(x => `<span title="${esc(x.name)}">${esc(x.name.split(/[(\/]/)[0].replace(/ IS 2062.*| 6061-T6| 304$/, m => m.includes('6061') ? ' 6061' : m.includes('304') ? ' 304' : '').trim())}</span><span class="trk"><i class="${x.name === P0.mat.name ? '' : 'alt'}" style="width:${x.v / mmax * 100}%"></i></span><span class="v">${rs(x.v)}</span>`).join('')}</div>
+        <p class="muted" style="font-size:13px;margin-top:8px">At ${fmt(q)} pieces. Part mass ranges from ${fmt(Math.min(...mc.map(x => x.mass)), 2)} kg to ${fmt(Math.max(...mc.map(x => x.mass)), 2)} kg.</p>
+      </section>
+      <section style="grid-column: 1 / -1">
+        <h3>7 · Recommendations for the designer</h3>
+        <ul>
+          <li><b>Check bore stability.</b> PA6 takes up 1–2% moisture and grows with it, a few hundredths on Ø20.4 and several tenths over 176 mm. If the rail fit matters, acetal (POM-C) holds size better for a similar price: ${rs(mc.find(x => x.name.startsWith('Acetal')) ? mc.find(x => x.name.startsWith('Acetal')).v : 0)} per part here.</li>
+          <li><b>Plan the deep bores.</b> At ${bores[0] ? (bores[0].depth / bores[0].d).toFixed(1) : '—'}×D they need peck drilling and a reamer or boring bar, or machining halfway from each face, to keep them straight and parallel.</li>
+          <li><b>Drill the cross holes in one pass.</b> If one bolt passes through both posts, use a long drill from one side so both walls line up.</li>
+          <li><b>Consider splitting the posts.</b> The channel is most of the chips and most of the spindle time. If the posts only carry the cross bolts, bolting four post blocks onto a 50 mm plate cuts material and roughing.</li>
+          <li><b>Swap the root chamfers for R5 radii</b> if their shape is not functional. A bull-nose cutter finishes them in the same pass as the walls; a 45° chamfer needs its own tool.</li>
+        </ul>
+        <p class="src">Rates: cast nylon ₹360/kg and acetal ₹220–500/kg from Indian supplier listings (Oct 2026); VMC ₹450/h; setup 45 min and CAM 30 min per setup. Change any of these under Market rates below.</p>
+      </section>
+    </div>`;
+}
+
+function renderGeo() {
+  const S = state.S, A = S.A, f = S.features, sz = A.bbox.size;
+  const matD = 2.7;
+  $('#geo').innerHTML = [
+    ['Envelope', sz.map(v => v.toFixed(1)).join(' × ') + ' mm'],
+    ['Volume', fmt(A.volume / 1000, 2) + ' cm³'],
+    ['Surface area', fmt(A.area / 100, 1) + ' cm²'],
+    ['Faces', `${f.faces} (${f.planar} flat, ${f.cyl} cyl, ${f.cone} cone, ${f.free} free)`],
+    ['Part type', S.turned ? 'Rotational' : 'Prismatic'],
+    ['Holes', String(f.holes.length)],
+    ['Min. inside radius', f.minCornerR ? 'R' + f.minCornerR.toFixed(2) : '—']
+  ].map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join('');
+  let rows = '';
+  f.holes.forEach(h => rows += `<tr><td>${h.cbore ? 'Counterbored hole' : h.interrupted ? 'Coaxial hole pair' : 'Hole'}</td><td class="r">Ø${h.d.toFixed(2)}${h.cbore ? ' / Ø' + h.dMax.toFixed(1) : ''}</td><td class="r">${h.interrupted ? (h.cutDepth.toFixed(1) + ' in ' + h.segs) : h.depth.toFixed(1)}</td><td>${h.through ? 'Through' : 'Blind'}${h.depth / h.d > 5 ? ' · deep, ' + (h.depth / h.d).toFixed(1) + '×D' : ''}${h.tap ? ` · tap-drill for ${h.tap}` : ''}</td></tr>`);
+  if (S.turned) { const T = S.turned; rows += `<tr><td>Turned envelope</td><td class="r">Ø${(T.rMax * 2).toFixed(2)}</td><td class="r">${T.L.toFixed(1)}</td><td>${T.steps} diameter step(s)${T.hasBore ? (T.throughBore ? ' · through bore' : ' · blind bore') : ''}</td></tr>`; }
+  if (f.slots) rows += `<tr><td>Slot ends</td><td class="r">${f.slots}</td><td class="r">—</td><td>Half-round internal faces</td></tr>`;
+  if (f.minCornerR) rows += `<tr><td>Internal corner</td><td class="r">R${f.minCornerR.toFixed(2)}</td><td class="r">—</td><td>Sets the smallest cutter</td></tr>`;
+  if (f.freeFrac > 0.02) rows += `<tr><td>Free-form surface</td><td class="r">${(f.freeFrac * 100).toFixed(0)}%</td><td class="r">—</td><td>Fillets / blends, 3D finishing</td></tr>`;
+  const P = S.prismatic;
+  rows += `<tr><td>Machining directions</td><td class="r">${P.setups.length}</td><td class="r">—</td><td>${P.setups.map(s => s.dir).join(', ')}</td></tr>`;
+  $('#feat tbody').innerHTML = rows || '<tr><td colspan="4" class="muted">No machined features detected beyond the outer faces.</td></tr>';
+}
+
+$('#copyQuote').addEventListener('click', () => {
+  if (!state.plan) return;
+  const P = state.plan, r = currentRoute(), c = r.cost;
+  const lines = [`Quote — ${state.name}${state.bodies.length > 1 ? ' / ' + state.bodies[state.bodyIdx].name : ''}`, `Material: ${P.mat.name} · Qty ${P.q} · ${P.tol.name} · ${P.fin.name}`, `Route: ${r.name}`, `Stock: ${r.stock.desc} (${fmt(c.stockMass, 3)} kg)`, '', 'Operations:'];
+  r.ops.forEach(o => lines.push(`  - ${o.label} [${MC_NAME(o.machine)}]${o.min && o.kind !== 'laser' && o.kind !== 'edm' ? ' ' + fmt(o.min, 2) + ' min' : ''} — ${rs(o.cost || 0)}`));
+  lines.push('', `Material ${rs(c.material)} · Cutting ${rs(c.cutting)} · Machining ${rs(c.machining + c.load)} · Setup/part ${rs(c.setupPer)} · Deburr/finish ${rs(c.deburr + c.treat)} · Overhead+margin ${rs(c.overhead + c.margin)}`, `Price per part: ${rs(c.perPart)} + GST ${rs(c.gst)} = ${rs(c.perPartGst)}`, `Batch total incl. GST: ${rs(c.batchGst)}`, `Cycle time ${fmt(c.cycleMin, 1)} min/part`);
+  copyText(lines.join('\n'), 'Quote copied');
+});
+function copyText(txt, ok) {
+  const done = () => toast(ok);
+  try { navigator.clipboard.writeText(txt).then(done, () => fallback()); } catch (e) { fallback(); }
+  function fallback() { const ta = $('#importText'); $('#importBox').hidden = false; $('#ratesBox').open = true; ta.value = txt; ta.focus(); ta.select(); toast('Clipboard blocked; text selected below'); }
+}
+
+// ---------------- rates editor ----------------
+let rateTab = 'materials';
+document.querySelectorAll('#rateTabs button').forEach(b => b.addEventListener('click', () => { rateTab = b.dataset.tab; document.querySelectorAll('#rateTabs button').forEach(x => x.setAttribute('aria-selected', x === b)); renderRates(); }));
+function numIn(path, v, step) { return `<input type="number" step="${step || 'any'}" data-path="${path}" value="${v}" aria-label="${esc(path)}">`; }
+const PROC_LABEL = { millMRR: ['Milling roughing rate', 'cm³/min in Al'], millFinish: ['Milling finishing rate', 'cm²/min in Al'], turnMRR: ['Turning roughing rate', 'cm³/min in Al'], turnFinish: ['Turning finishing rate', 'cm²/min in Al'], drillFeed: ['Drill feed', 'mm/min in Al'], tapPerHole: ['Tapping', 'min/hole'], reamPerHole: ['Reaming', 'min/hole'], toolChange: ['Tool change', 'min'], loadVmc: ['Load/unload VMC', 'min/setup'], loadLathe: ['Load/unload lathe', 'min/setup'], setupVmc: ['VMC setup', 'min/setup/batch'], setupLathe: ['Lathe setup', 'min/setup/batch'], setupEdm: ['Wire EDM setup', 'min/batch'], setupLaser: ['Laser/waterjet setup', 'min/batch'], programPerSetup: ['CAM programming', 'min/setup/batch'], deburrBase: ['Deburr + inspect', 'min/part'], deburrPerFeature: ['Per feature', 'min'], freeformFactor: ['3D surface slow-down', '×'], partOffMin: ['Part-off (Ø25)', 'min'] };
+const CUT_LABEL = { sawPerCut: ['Bandsaw', '₹ per cut'], sawPerCm2: ['Bandsaw area', '₹/cm² of section'], laserBasePerM: ['Laser base', '₹/m (MS)'], laserPerMmPerM: ['Laser per mm thickness', '₹/m per mm'], laserPierce: ['Pierce', '₹ each'], waterjetBasePerM: ['Waterjet base', '₹/m'], waterjetPerMmPerM: ['Waterjet per mm', '₹/m per mm'], wireEdmPerMm2: ['Wire EDM', '₹/mm² of cut face'], wireEdmStart: ['Wire threading', '₹ per start'] };
+function renderRates() {
+  $('#ratesStamp').textContent = 'Researched ' + (RATES.updated || '');
+  let h = '';
+  if (rateTab === 'materials') {
+    h = `<table class="edit"><thead><tr><th>Material</th><th class="r">Bar ₹/kg</th><th class="r">Plate ₹/kg</th><th class="r">Density g/cm³</th><th class="r">Time factor</th><th class="r">Cut factor</th><th class="r">Laser max mm</th></tr></thead><tbody>` +
+      RATES.materials.map((m, i) => `<tr><td>${esc(m.name)}</td><td>${numIn(`materials.${i}.bar`, m.bar)}</td><td>${numIn(`materials.${i}.plate`, m.plate)}</td><td>${numIn(`materials.${i}.density`, m.density)}</td><td>${numIn(`materials.${i}.mi`, m.mi)}</td><td>${numIn(`materials.${i}.cutF`, m.cutF)}</td><td>${numIn(`materials.${i}.laserMax`, m.laserMax)}</td></tr>`).join('') + '</tbody></table><p class="src">Time factor scales every machining time relative to aluminium 6061 (1.0). Cut factor scales laser and waterjet ₹/m.</p>';
+  } else if (rateTab === 'machines') {
+    h = `<table class="edit"><thead><tr><th>Machine</th><th class="r">₹ / hour</th></tr></thead><tbody>` + Object.entries(RATES.machines).map(([k, m]) => `<tr><td>${esc(m.name)}</td><td>${numIn(`machines.${k}.rate`, m.rate)}</td></tr>`).join('') + '</tbody></table>';
+  } else if (rateTab === 'cutting') {
+    h = `<table class="edit"><tbody>` + Object.entries(RATES.cutting).map(([k, v]) => `<tr><td>${esc((CUT_LABEL[k] || [k])[0])} <span class="muted">${esc((CUT_LABEL[k] || [, ''])[1])}</span></td><td>${numIn(`cutting.${k}`, v)}</td></tr>`).join('') + '</tbody></table>';
+  } else if (rateTab === 'process') {
+    h = `<table class="edit"><tbody>` + Object.entries(RATES.process).map(([k, v]) => `<tr><td>${esc((PROC_LABEL[k] || [k])[0])} <span class="muted">${esc((PROC_LABEL[k] || [, ''])[1])}</span></td><td>${numIn(`process.${k}`, v)}</td></tr>`).join('') + '</tbody></table>';
+  } else if (rateTab === 'finishes') {
+    h = `<table class="edit"><thead><tr><th>Finish</th><th class="r">₹/dm²</th><th class="r">₹/kg</th><th class="r">Lot minimum ₹</th></tr></thead><tbody>` + RATES.finishes.map((f, i) => i === 0 ? '' : `<tr><td>${esc(f.name)}</td><td>${numIn(`finishes.${i}.perDm2`, f.perDm2)}</td><td>${numIn(`finishes.${i}.perKg`, f.perKg)}</td><td>${numIn(`finishes.${i}.min`, f.min)}</td></tr>`).join('') + '</tbody></table>';
+  } else {
+    h = `<table class="edit"><tbody><tr><td>Overhead on conversion cost <span class="muted">%</span></td><td>${numIn('overheads.overheadPct', RATES.overheads.overheadPct)}</td></tr><tr><td>Margin <span class="muted">%</span></td><td>${numIn('overheads.marginPct', RATES.overheads.marginPct)}</td></tr><tr><td>GST <span class="muted">%</span></td><td>${numIn('overheads.gstPct', RATES.overheads.gstPct)}</td></tr></tbody></table>`;
+  }
+  $('#rateBody').innerHTML = h;
+  $('#rateBody').querySelectorAll('input[data-path]').forEach(inp => inp.addEventListener('change', () => {
+    const v = parseFloat(inp.value); if (!isFinite(v) || v < 0) { inp.value = getPath(inp.dataset.path); return; }
+    setPath(inp.dataset.path, v); saveRates(); if (inp.dataset.path.startsWith('materials')) fillSelects(); replan(false); toast('Rate updated');
+  }));
+}
+function getPath(p) { return p.split('.').reduce((o, k) => o[k], RATES); }
+function setPath(p, v) { const ks = p.split('.'); const last = ks.pop(); ks.reduce((o, k) => o[k], RATES)[last] = v; }
+renderRates();
+$('#ratesReset').addEventListener('click', () => { RATES = clone(MFG.DEFAULT_RATES); saveRates(); fillSelects(); renderRates(); replan(true); toast('Rates reset'); });
+$('#ratesCopy').addEventListener('click', () => copyText(JSON.stringify(RATES, null, 1), 'Rates copied'));
+$('#ratesImportToggle').addEventListener('click', () => { $('#importBox').hidden = !$('#importBox').hidden; });
+$('#importApply').addEventListener('click', () => {
+  try { const r = JSON.parse($('#importText').value); if (!r.materials || !r.machines || !r.process) throw 0; RATES = Object.assign(clone(MFG.DEFAULT_RATES), r); saveRates(); fillSelects(); renderRates(); replan(true); toast('Rates imported'); }
+  catch (e) { toast('That text is not a rates JSON from this page'); }
+});
+
+// =====================================================================
+// SIMULATION
+// =====================================================================
+const METAL = { 'Engineering plastic': 0xe9e5da, Aluminium: 0xc9cfd6, Steel: 0x8e959c, Stainless: 0xb9bec4, 'Copper alloy': 0xcaa24e, Titanium: 0xa0a198 };
+const COPPER = 0xc8794a;
+
+class Sim {
+  constructor(el) {
+    this.el = el;
+    const r = this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    r.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+    r.toneMapping = THREE.ACESFilmicToneMapping; r.toneMappingExposure = 1.05;
+    el.prepend(r.domElement);
+    this.scene = new THREE.Scene();
+    const pm = new THREE.PMREMGenerator(r);
+    this.scene.environment = pm.fromScene(new RoomEnvironment(), 0.04).texture;
+    this.camera = new THREE.PerspectiveCamera(35, 16 / 9, 0.5, 20000);
+    this.camera.up.set(0, 0, 1);
+    this.controls = new OrbitControls(this.camera, r.domElement);
+    this.controls.enableDamping = true;
+    const d = new THREE.DirectionalLight(0xffffff, 1.2); d.position.set(300, -400, 600); this.scene.add(d);
+    const d2 = new THREE.DirectionalLight(0xbfd0ff, 0.5); d2.position.set(-400, 300, 200); this.scene.add(d2);
+    this.scene.add(new THREE.HemisphereLight(0xdfe8f2, 0x30363d, 0.5));
+    this.world = new THREE.Group(); this.scene.add(this.world);
+    this.segs = []; this.t = 0; this.total = 0; this.playing = false; this.speed = 1; this.showFinal = false;
+    this.clock = new THREE.Clock();
+    new ResizeObserver(() => this.resize()).observe(el); this.resize();
+    const loop = () => { requestAnimationFrame(loop); this.tick(); }; loop();
+  }
+  resize() { const w = this.el.clientWidth, h = this.el.clientHeight; this.renderer.setSize(w, h, false); this.camera.aspect = w / Math.max(1, h); this.camera.updateProjectionMatrix(); }
+  clear() { this.world.clear(); this.segs = []; this.t = 0; this.total = 0; this.lathe = null; this.V = null; this._placeRig = null; this.chips = null; this.rig = null; this.spinOn = false; }
+
+  // geometry of the part in a study frame
+  partGeometry(F) {
+    const T = this.T, n = T.pos.length;
+    const pos = new Float32Array(n), nor = new Float32Array(n);
+    const flip = this.S.A.flipped ? -1 : 1;
+    for (let i = 0; i < n; i += 3) {
+      const p = MFG.toFrame(F, [T.pos[i], T.pos[i + 1], T.pos[i + 2]]); pos[i] = p[0]; pos[i + 1] = p[1]; pos[i + 2] = p[2];
+      const vn = [T.vn[i] * flip, T.vn[i + 1] * flip, T.vn[i + 2] * flip];
+      const q = (vn[0] || vn[1] || vn[2]) ? MFG.dirToFrame(F, vn) : MFG.dirToFrame(F, [T.nrm[(i / 9 | 0) * 3], T.nrm[(i / 9 | 0) * 3 + 1], T.nrm[(i / 9 | 0) * 3 + 2]]);
+      nor[i] = q[0]; nor[i + 1] = q[1]; nor[i + 2] = q[2];
+    }
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+    if (this.S.A.flipped) g.index = null;
+    return g;
+  }
+  setPart(T, S) { this.T = T; this.S = S; $('#vpMsg').textContent = ''; }
+
+  materials(mat) {
+    const base = new THREE.Color(mat.id === 'cu' ? COPPER : (METAL[mat.group] || 0xc0c4c8));
+    const stockC = mat.plastic ? base.clone().multiplyScalar(0.86) : base.clone().multiplyScalar(0.72).lerp(new THREE.Color(0x6a6f74), 0.15);
+    return {
+      part: new THREE.MeshStandardMaterial({ color: base, metalness: mat.plastic ? 0.0 : 0.9, roughness: mat.plastic ? 0.5 : 0.28, side: THREE.DoubleSide }),
+      stock: new THREE.MeshStandardMaterial({ color: stockC, metalness: mat.plastic ? 0.0 : 0.55, roughness: mat.plastic ? 0.7 : 0.62 }),
+      plug: new THREE.MeshStandardMaterial({ color: stockC, metalness: mat.plastic ? 0.0 : 0.55, roughness: mat.plastic ? 0.7 : 0.62 }),
+      cutter: new THREE.MeshStandardMaterial({ color: 0x9aa3ad, metalness: 0.85, roughness: 0.35 }),
+      holder: new THREE.MeshStandardMaterial({ color: 0x4b545e, metalness: 0.7, roughness: 0.4 }),
+      ring: new THREE.MeshStandardMaterial({ color: 0xe08a1e, metalness: 0.3, roughness: 0.5, emissive: 0x3a1f00 }),
+      jaw: new THREE.MeshStandardMaterial({ color: 0x3a4652, metalness: 0.6, roughness: 0.5 }),
+      table: new THREE.MeshStandardMaterial({ color: 0x2a333d, metalness: 0.4, roughness: 0.75 }),
+      chip: new THREE.PointsMaterial({ color: 0xf0a23c, size: 1.6, sizeAttenuation: true })
+    };
+  }
+
+  // ---------- tools ----------
+  makeTool(kind, d, M, Lf) {
+    const g = new THREE.Group(); // tip at origin, pointing -Z
+    const L = Math.max(d * 3, 18, Lf || 0); // stick-out long enough that the holder stays above the stock
+    if (kind === 'drill' || kind === 'tap' || kind === 'bore') {
+      const body = new THREE.Mesh(new THREE.CylinderGeometry(d / 2, d / 2, L, 20).rotateX(Math.PI / 2), M.cutter); body.position.z = L / 2 + d * 0.28; g.add(body);
+      if (kind !== 'tap' && kind !== 'bore') { const tip = new THREE.Mesh(new THREE.ConeGeometry(d / 2, d * 0.56, 20).rotateX(-Math.PI / 2), M.cutter); tip.position.z = d * 0.28; g.add(tip); }
+      else { body.position.z = L / 2; }
+      if (kind === 'tap') body.material = new THREE.MeshStandardMaterial({ color: 0xc9a14a, metalness: 0.8, roughness: 0.35 });
+    } else {
+      const flute = new THREE.Mesh(new THREE.CylinderGeometry(d / 2, d / 2, L, 28).rotateX(Math.PI / 2), M.cutter); flute.position.z = L / 2; g.add(flute);
+    }
+    const hl = Math.max(30, d * 3);
+    const holder = new THREE.Mesh(new THREE.CylinderGeometry(Math.max(d, 10) * 1.6, Math.max(d * 0.55, Math.min(7, d)), hl, 32).rotateX(Math.PI / 2), M.holder); holder.position.z = L + hl / 2; g.add(holder);
+    const ring = new THREE.Mesh(new THREE.CylinderGeometry(Math.max(d, 10) * 1.65, Math.max(d, 10) * 1.65, 3, 32).rotateX(Math.PI / 2), M.ring); ring.position.z = L + hl * 0.75; g.add(ring);
+    const spindle = new THREE.Mesh(new THREE.CylinderGeometry(Math.max(d, 10) * 2.6, Math.max(d, 10) * 2.6, 60, 40).rotateX(Math.PI / 2), M.jaw); spindle.position.z = L + hl + 30; g.add(spindle);
+    g.userData = { d, L };
+    return g;
+  }
+  makeChips(M) {
+    const N = 160; const geo = new THREE.BufferGeometry(); const p = new Float32Array(N * 3).fill(1e6);
+    geo.setAttribute('position', new THREE.BufferAttribute(p, 3));
+    const pts = new THREE.Points(geo, M.chip); pts.frustumCulled = false;
+    pts.userData = { v: new Float32Array(N * 3), life: new Float32Array(N), i: 0, N };
+    return pts;
+  }
+  emitChips(at, n, spread) {
+    const c = this.chips; if (!c) return; const u = c.userData, p = c.geometry.attributes.position.array;
+    for (let k = 0; k < n; k++) { const i = u.i = (u.i + 1) % u.N; p[i * 3] = at.x; p[i * 3 + 1] = at.y; p[i * 3 + 2] = at.z; const a = Math.random() * Math.PI * 2; const s = spread * (0.5 + Math.random()); u.v[i * 3] = Math.cos(a) * s; u.v[i * 3 + 1] = Math.sin(a) * s; u.v[i * 3 + 2] = spread * (0.6 + Math.random()); u.life[i] = 0.6 + Math.random() * 0.4; }
+    c.geometry.attributes.position.needsUpdate = true;
+  }
+  stepChips(dt) {
+    const c = this.chips; if (!c) return; const u = c.userData, p = c.geometry.attributes.position.array;
+    for (let i = 0; i < u.N; i++) { if (u.life[i] <= 0) continue; u.life[i] -= dt; if (u.life[i] <= 0) { p[i * 3 + 2] = 1e6; continue; } p[i * 3] += u.v[i * 3] * dt; p[i * 3 + 1] += u.v[i * 3 + 1] * dt; p[i * 3 + 2] += u.v[i * 3 + 2] * dt; u.v[i * 3 + 2] -= 300 * dt; }
+    c.geometry.attributes.position.needsUpdate = true;
+  }
+
+  setRoute(route, S, mat) {
+    if (!this.T) return;
+    this.clear(); this.route = route; this.mat = mat; this.M = this.materials(mat);
+    try { if (route.kind === 'turned') this.buildTurned(route, S); else this.buildPrismatic(route, S); }
+    catch (e) { console.error(e); $('#vpMsg').textContent = 'Simulation could not be built for this part: ' + e.message; return; }
+    this.total = this.segs.reduce((s, g) => s + g.dur, 0);
+    let t = 0; this.segs.forEach(g => { g.start = t; t += g.dur; });
+    this.drawTimeline();
+    this.seek(0); this.showFinal = false; $('#view').textContent = 'Show finished part';
+    this.setPlaying(true);
+  }
+
+  // ---------- voxel workpiece (shared by prismatic and turned secondary) ----------
+  buildVoxelWork(G, F, holes, partMat, stockMat, plugMat) {
+    const work = new THREE.Group();
+    const part = new THREE.Mesh(this.partGeometry(F), partMat); work.add(part);
+    const ids = []; for (let q = 0; q < G.state.length; q++) if (G.state[q] === 1) ids.push(q);
+    const box = new THREE.BoxGeometry(G.vx * 1.001, G.vy * 1.001, G.vz * 1.001);
+    const inst = new THREE.InstancedMesh(box, stockMat, Math.max(1, ids.length));
+    const map = new Int32Array(G.state.length).fill(-1);
+    const m4 = new THREE.Matrix4();
+    ids.forEach((q, n) => { map[q] = n; const i = q % G.nx, j = Math.floor(q / G.nx) % G.ny, k = Math.floor(q / (G.nx * G.ny)); const c = G.center(i, j, k); m4.makeTranslation(c[0], c[1], c[2]); inst.setMatrixAt(n, m4); });
+    inst.count = ids.length; work.add(inst);
+    const plugs = {};
+    for (const h of holes) {
+      const L = h.t1 - h.t0; if (L <= 0) continue;
+      const geo = new THREE.CylinderGeometry(h.r * 0.985, h.r * 0.985, L, 28); geo.translate(0, L / 2, 0); // base at y=0 grows along +y
+      const m = new THREE.Mesh(geo, plugMat);
+      const ax = new THREE.Vector3(...h.axis);
+      m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), ax);
+      const base = new THREE.Vector3(...h.point).addScaledVector(ax, h.t0); m.position.copy(base);
+      m.userData = { base, ax, L, t0: h.t0 };
+      work.add(m); (plugs[h.hid] = plugs[h.hid] || []).push(m);
+    }
+    return { work, part, inst, ids, map, plugs, G };
+  }
+  hideVox(V, q) { const n = V.map[q]; if (n < 0) return false; V.inst.setMatrixAt(n, this._zero || (this._zero = new THREE.Matrix4().makeScale(0, 0, 0))); V.map[q] = -2 - n; return true; }
+  resetVox(V) { const m4 = new THREE.Matrix4(); const G = V.G; for (let n = 0; n < V.ids.length; n++) { const q = V.ids[n]; V.map[q] = n; const i = q % G.nx, j = Math.floor(q / G.nx) % G.ny, k = Math.floor(q / (G.nx * G.ny)); const c = G.center(i, j, k); m4.makeTranslation(c[0], c[1], c[2]); V.inst.setMatrixAt(n, m4); } V.inst.instanceMatrix.needsUpdate = true; for (const k in V.plugs) for (const m of V.plugs[k]) { m.visible = true; m.scale.set(1, 1, 1); } }
+  alive(V, q) { return V.map[q] >= 0; }
+
+  // rig: table → pivot(rotation) → offset(work centred)
+  makeRig(work, center) {
+    const pivot = new THREE.Group(); const off = new THREE.Group(); off.position.set(-center[0], -center[1], -center[2]); off.add(work); pivot.add(off);
+    this.world.add(pivot); return { pivot, off };
+  }
+  dirQuat(dir) {
+    const v = { '+Z': [0, 0, 1], '-Z': [0, 0, -1], '+X': [1, 0, 0], '-X': [-1, 0, 0], '+Y': [0, 1, 0], '-Y': [0, -1, 0] }[dir] || [0, 0, 1];
+    const q = new THREE.Quaternion();
+    if (dir === '-Z') q.setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI); else q.setFromUnitVectors(new THREE.Vector3(...v), new THREE.Vector3(0, 0, 1));
+    return q;
+  }
+  frameCamera(size, target) {
+    const s = Math.max(...size);
+    this.camera.position.set(target[0] + s * 1.5, target[1] - s * 1.9, target[2] + s * 1.3);
+    this.controls.target.set(...target); this.camera.near = s / 100; this.camera.far = s * 100; this.camera.updateProjectionMatrix(); this.controls.update();
+  }
+
+  buildPrismatic(route, S) {
+    const P = S.prismatic, G = P.G, M = this.M;
+    const V = this.V = this.buildVoxelWork(G, P.F, P.holes, M.part, M.stock, M.plug);
+    const center = [(P.sMin[0] + P.sMax[0]) / 2, (P.sMin[1] + P.sMax[1]) / 2, (P.sMin[2] + P.sMax[2]) / 2];
+    const half = [(P.sMax[0] - P.sMin[0]) / 2, (P.sMax[1] - P.sMin[1]) / 2, (P.sMax[2] - P.sMin[2]) / 2];
+    const rig = this.rig = this.makeRig(V.work, center);
+    const smax = Math.max(...half) * 2;
+    // table + vise jaws (world)
+    const table = new THREE.Mesh(new THREE.BoxGeometry(smax * 3.2, smax * 2.2, 8), M.table); this.world.add(table);
+    const jawA = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), M.jaw), jawB = jawA.clone(); this.world.add(jawA, jawB);
+    this.chips = this.makeChips(M); this.world.add(this.chips);
+    const tools = {};
+    const getTool = (kind, d, L) => { const k = kind + d.toFixed(1) + ':' + Math.round(L || 0); if (!tools[k]) { tools[k] = this.makeTool(kind, d, M, L); tools[k].visible = false; this.world.add(tools[k]); } return tools[k]; };
+    this._getTool = getTool;
+    const vmax = Math.max(G.vx, G.vy, G.vz);
+    const millD = Math.min(25, Math.max(6, vmax * 2.2));
+    const placeRig = (q) => { // rotate and sit on the table
+      rig.pivot.quaternion.copy(q);
+      const ext = new THREE.Vector3(...half).applyQuaternion(q); const ez = Math.abs(ext.z), ex = Math.abs(ext.x), ey = Math.abs(ext.y);
+      // abs extents of rotated box
+      const R = new THREE.Matrix3().setFromMatrix4(new THREE.Matrix4().makeRotationFromQuaternion(q)).elements;
+      const hx = Math.abs(R[0]) * half[0] + Math.abs(R[3]) * half[1] + Math.abs(R[6]) * half[2];
+      const hy = Math.abs(R[1]) * half[0] + Math.abs(R[4]) * half[1] + Math.abs(R[7]) * half[2];
+      const hz = Math.abs(R[2]) * half[0] + Math.abs(R[5]) * half[1] + Math.abs(R[8]) * half[2];
+      rig.pivot.position.set(0, 0, hz + 4);
+      table.position.set(0, 0, 0);
+      const jh = Math.min(hz * 2 * 0.55, 40), jw = Math.max(hx * 2 + 20, 40);
+      jawA.scale.set(jw, 14, jh); jawB.scale.set(jw, 14, jh);
+      jawA.position.set(0, hy + 7, jh / 2 + 4); jawB.position.set(0, -hy - 7, jh / 2 + 4);
+      this.topZ = hz * 2 + 4;
+    };
+    this._placeRig = placeRig;
+    const worldOf = (p) => { rig.pivot.updateMatrixWorld(true); return rig.off.localToWorld(new THREE.Vector3(...p)); };
+    const showTool = (tool) => { Object.values(tools).forEach(t => t.visible = t === tool); };
+    const segs = this.segs;
+    let curQ = new THREE.Quaternion();
+    const thinTo = route.id === 'profile' ? route.stock.dims[2] : null;
+    const thinIds = []; if (thinTo) { const z0 = (P.size[2] - thinTo) / 2, z1 = (P.size[2] + thinTo) / 2; for (const q of V.ids) { const k = Math.floor(q / (G.nx * G.ny)); const z = G.center(0, 0, k)[2]; if (z < z0 || z > z1) thinIds.push(q); } }
+    this.resetFns = [() => { this.resetVox(V); for (const q of thinIds) this.hideVox(V, q); V.inst.instanceMatrix.needsUpdate = true; placeRig(new THREE.Quaternion()); curQ = new THREE.Quaternion(); showTool(null); this.finishGlow(0); }];
+    // stock preparation
+    for (const o of route.ops.filter(o => o.kind === 'saw' || o.kind === 'laser')) {
+      if (o.kind === 'saw') segs.push({ label: o.label, sub: 'Bandsaw, stock ' + route.stock.desc, mc: 'Bandsaw', cls: 'k-cut', dur: 1.6, apply: (u) => { rig.pivot.position.x = (1 - this.ease(u)) * -smax * 1.2; if (u >= 1) rig.pivot.position.x = 0; } });
+      if (o.kind === 'laser') {
+        const path = this.silhouettePath(G, P);
+        const outside = []; for (const q of V.ids) { const i = q % G.nx, j = Math.floor(q / G.nx) % G.ny; if (!G.colIntervals[j * G.nx + i].length) outside.push(q); }
+        const laser = this.makeBeam(M); this.world.add(laser);
+        const holes = o.holes || [];
+        segs.push({ label: o.label, sub: route.stock.desc, mc: o.machine === 'laser' ? 'Fibre laser' : 'Waterjet', cls: 'k-cut', dur: 4, apply: (u) => {
+          laser.visible = u > 0 && u < 1;
+          const k = Math.min(path.length - 1, Math.floor(u * path.length));
+          if (path.length) { const w = worldOf(path[k]); laser.position.set(w.x, w.y, this.topZ); this.emitChips(new THREE.Vector3(w.x, w.y, this.topZ - 2), 2, 40); }
+          if (u >= 1) { for (const q of outside) this.hideVox(V, q); V.inst.instanceMatrix.needsUpdate = true; for (const h of holes) (V.plugs[h] || []).forEach(m => m.visible = false); }
+        } });
+      }
+      if (o.kind === 'saw' && route.id === 'wire-edm') {} // nothing extra
+    }
+    // group ops by setup
+    const setupIdx = [...new Set(route.ops.filter(o => o.setup != null).map(o => o.setup))].sort((a, b) => a - b);
+    const setups = route.setups;
+    for (const si of setupIdx) {
+      const sdef = setups[si] || { dir: '+Z' };
+      const ops = route.ops.filter(o => o.setup === si);
+      const isEdm = ops.some(o => o.kind === 'edm');
+      const dir = isEdm ? '+Z' : sdef.dir;
+      const q = this.dirQuat(dir);
+      // setup transition
+      ((q, label) => segs.push({ label, sub: isEdm ? 'Clamp on wire EDM table' : `Clamp in vise · tool approaches from ${dir} of the part`, mc: isEdm ? 'Wire EDM' : MC_NAME(route.machineKey), cls: 'k-setup', dur: 1.5, apply: (u, st) => {
+        if (!st.q0) st.q0 = rig.pivot.quaternion.clone();
+        showTool(null); placeRig(new THREE.Quaternion().slerpQuaternions(st.q0, q, this.ease(u)));
+      } }))(q, ops[0] && ops[0].setupLabel ? ops[0].setupLabel : `Setup ${si + 1}`);
+      const tilt = (d, label) => { const qq = this.dirQuat(d); segs.push({ label, sub: '5-axis trunnion tilts the part; no re-clamp', mc: MC_NAME(route.machineKey), cls: 'k-setup', dur: 1.1, apply: (u, st) => { if (!st.q0) st.q0 = rig.pivot.quaternion.clone(); showTool(null); placeRig(new THREE.Quaternion().slerpQuaternions(st.q0, qq, this.ease(u))); } }); };
+      let curDir = dir;
+      for (const o of ops) {
+        if (o.kind === 'rough' || (o.kind === 'finish' && !o.label.startsWith('Face'))) {
+          // a merged 5-axis setup machines each approach direction in turn, tilting the part between them
+          const dirs = sdef.merged || [sdef.dir];
+          for (const d of dirs) {
+            const sv = P.setups.find(x => x.dir === d); if (!sv) continue;
+            if (d !== curDir) { tilt(d, `Tilt to ${d}`); curDir = d; }
+            const axLen = d.endsWith('Z') ? P.sMax[2] - P.sMin[2] : d.endsWith('X') ? P.sMax[0] - P.sMin[0] : P.sMax[1] - P.sMin[1];
+            if (o.kind === 'rough') {
+              segs.push(this.millSeg(o, sv.voxels, V, d, millD, axLen, worldOf, showTool));
+              // on a 5-axis setup finish each face while it is tilted up, instead of tilting back later
+              if (sdef.merged) { const fo = ops.find(x => x.kind === 'finish') || o; segs.push(this.skinSeg(fo, sv.voxels, V, d, axLen, worldOf, showTool)); }
+            } else if (!sdef.merged) segs.push(this.skinSeg(o, sv.voxels, V, d, axLen, worldOf, showTool));
+          }
+        } else if (o.kind === 'finish') {
+          const tool = getTool('mill', Math.max(6, millD), 10);
+          segs.push(this.finishSeg(o, V, P, tool, worldOf, showTool, route, true));
+        } else if (o.kind === 'drill' || o.kind === 'bore' || o.kind === 'tap') {
+          const h = P.holeInfo.find(x => x.hid === o.hid); if (!h) continue;
+          const hd = h.setup && h.setup !== 'angled' ? h.setup : curDir;
+          if (sdef.merged && hd !== curDir) { tilt(hd, `Tilt to ${hd}`); curDir = hd; }
+          const ent = h.entry ? h.entry.at : h.point, tw = h.entry ? h.entry.toward : h.u;
+          // distance from the hole entry back out to the stock face along the drill axis, so the holder never reaches the part
+          let reach = 0; for (let ax = 0; ax < 3; ax++) { const t = -tw[ax]; if (Math.abs(t) > 0.5) reach = t > 0 ? P.sMax[ax] - ent[ax] : ent[ax] - P.sMin[ax]; }
+          const tool = getTool(o.kind === 'bore' ? 'mill' : o.kind, o.kind === 'bore' ? Math.max(4, h.d * 0.6) : h.d, h.depth + reach + 22);
+          segs.push(this.holeSeg(o, h, V, tool, worldOf, showTool, route));
+        } else if (o.kind === 'edm') {
+          const path = this.silhouettePath(G, P);
+          const outside = []; for (const q2 of V.ids) { const i = q2 % G.nx, j = Math.floor(q2 / G.nx) % G.ny; if (!G.colIntervals[j * G.nx + i].length) outside.push(q2); }
+          const wire = this.makeWire(M, half[2] * 2 + 40); this.world.add(wire);
+          segs.push({ label: o.label, sub: 'Brass wire Ø0.25, submerged in deionised water', mc: 'Wire EDM', cls: 'k-cut', dur: 5, apply: (u) => {
+            showTool(null); wire.visible = u > 0 && u < 1;
+            const k = Math.min(path.length - 1, Math.floor(u * path.length)); if (path.length) { const w = worldOf(path[k]); wire.position.set(w.x, w.y, this.topZ / 2); }
+            if (u >= 1) { for (const q2 of outside) this.hideVox(V, q2); V.inst.instanceMatrix.needsUpdate = true; for (const hId of (o.holes || [])) (V.plugs[hId] || []).forEach(m => m.visible = false); }
+          } });
+        }
+      }
+    }
+    segs.push(this.doneSeg(route, showTool, V));
+    placeRig(new THREE.Quaternion());
+    this.frameCamera([smax * 1.6, smax * 1.6, smax], [0, 0, half[2]]);
+  }
+
+  ease(u) { return u < 0.5 ? 2 * u * u : 1 - Math.pow(-2 * u + 2, 2) / 2; }
+
+  // ---------- collision-aware toolpath planning on the voxel model ----------
+  // Tool axis = setup direction. Heights increase toward the spindle. A tool of radius R may sit with its tip at
+  // layer h only if every part / hole voxel within R + margin lies at least two layers below, and every voxel
+  // that belongs to a later setup lies below the tip. The tool removes this setup's voxels inside its radius.
+  millFrame(V, dir) {
+    const G = V.G, D = MFG.DIRS.find(x => x.k === dir), a = D.a, b = (a + 1) % 3, c = (a + 2) % 3;
+    const n = [G.nx, G.ny, G.nz], vs = [G.vx, G.vy, G.vz], mn = G.min, mx = G.max;
+    const H = ia => D.s > 0 ? ia : n[a] - 1 - ia;
+    const q3 = (ia, ib, ic) => { const t = [0, 0, 0]; t[a] = ia; t[b] = ib; t[c] = ic; return G.id(t[0], t[1], t[2]); };
+    const tip = (ib, ic, h, mid) => { const ia = H(h); const p = [0, 0, 0]; p[b] = mn[b] + (ib + 0.5) * vs[b]; p[c] = mn[c] + (ic + 0.5) * vs[c]; p[a] = mid ? mn[a] + (ia + 0.5) * vs[a] : (D.s > 0 ? mn[a] + ia * vs[a] : mn[a] + (ia + 1) * vs[a]); return p; };
+    const clear = (ib, ic) => { const p = tip(ib, ic, 0); p[a] = D.s > 0 ? mx[a] + 12 : mn[a] - 12; return p; };
+    return { G, D, a, b, c, n, vs, H, q3, tip, clear, nb: n[b], nc: n[c] };
+  }
+  disk(fr, R) { const out = []; const rb = Math.ceil(R / fr.vs[fr.b]), rc = Math.ceil(R / fr.vs[fr.c]); for (let db = -rb; db <= rb; db++) for (let dc = -rc; dc <= rc; dc++) if ((db * fr.vs[fr.b]) ** 2 + (dc * fr.vs[fr.c]) ** 2 <= R * R) out.push([db, dc]); return out; }
+  obstacleMaps(V, fr, inSet) {
+    const { G, n, a, nb, nc, H, q3 } = fr; const HP = new Int16Array(nb * nc).fill(-9), HS = new Int16Array(nb * nc).fill(-9);
+    for (let ic = 0; ic < nc; ic++) for (let ib = 0; ib < nb; ib++) for (let ia = 0; ia < n[a]; ia++) {
+      const q = q3(ia, ib, ic), st = G.state[q], h = H(ia), col = ic * nb + ib;
+      if (st === 2 || st === 3) { if (h > HP[col]) HP[col] = h; }
+      else if (st === 1 && this.alive(V, q) && !inSet[q]) { if (h > HS[col]) HS[col] = h; }
+    }
+    return { HP, HS };
+  }
+  planMill(V, vox, dir, radii) {
+    const fr = this.millFrame(V, dir), { G, nb, nc, n, a, q3, tip, clear } = fr;
+    const inSet = new Uint8Array(G.state.length); let hTop = -1;
+    for (const q of vox) if (G.state[q] === 1 && this.alive(V, q)) { inSet[q] = 1; const ijk = [q % G.nx, Math.floor(q / G.nx) % G.ny, Math.floor(q / (G.nx * G.ny))]; hTop = Math.max(hTop, fr.H(ijk[a])); }
+    const { HP, HS } = this.obstacleMaps(V, fr, inSet);
+    const vl = Math.max(fr.vs[fr.b], fr.vs[fr.c]);
+    const planned = new Uint8Array(G.state.length);
+    const path = []; let last = null;
+    const pushRapid = (to, R) => { if (last) { path.push({ p: clear(last.ib, last.ic), R, rapid: true, rem: [] }); path.push({ p: clear(to.ib, to.ic), R, rapid: true, rem: [] }); } else path.push({ p: clear(to.ib, to.ic), R, rapid: true, rem: [] }); };
+    for (const R of radii) {
+      const dRem = this.disk(fr, R + 0.6 * vl), dP = this.disk(fr, R + 1.25 * vl), dS = this.disk(fr, R + 0.75 * vl);
+      const hmin = new Int16Array(nb * nc);
+      for (let ic = 0; ic < nc; ic++) for (let ib = 0; ib < nb; ib++) {
+        let m = 0;
+        for (const [db, dc] of dP) { const jb = ib + db, jc = ic + dc; if (jb < 0 || jc < 0 || jb >= nb || jc >= nc) continue; const v = HP[jc * nb + jb] + 2; if (v > m) m = v; }
+        for (const [db, dc] of dS) { const jb = ib + db, jc = ic + dc; if (jb < 0 || jc < 0 || jb >= nb || jc >= nc) continue; const v = HS[jc * nb + jb] + 1; if (v > m) m = v; }
+        hmin[ic * nb + ib] = m;
+      }
+      const stepC = Math.max(1, Math.floor(0.8 * R / fr.vs[fr.c]));
+      let rowFlip = false;
+      for (let h = hTop; h >= 0; h--) {
+        const ia = fr.H(h);
+        for (let ic = 0; ic < nc + stepC - 1; ic += stepC) {
+          const icc = Math.min(nc - 1, ic);
+          const order = []; for (let ib = 0; ib < nb; ib++) order.push(ib); if (rowFlip) order.reverse(); rowFlip = !rowFlip;
+          let run = [];
+          const flush = () => {
+            let s0 = run.findIndex(x => x.rem.length), s1 = run.length - 1; while (s1 >= 0 && !run[s1].rem.length) s1--;
+            if (s0 >= 0) {
+              const seg = run.slice(s0, s1 + 1);
+              const f = seg[0];
+              const adjacent = last && last.h === h && last.R === R && Math.abs(last.ib - f.ib) <= 1 && Math.abs(last.ic - f.ic) <= stepC && hmin[last.ic * nb + last.ib] <= h;
+              if (!adjacent) pushRapid(f, R);
+              for (const x of seg) { path.push({ p: tip(x.ib, x.ic, h), R, rapid: false, rem: x.rem }); last = { ib: x.ib, ic: x.ic, h, R }; }
+            }
+            run = [];
+          };
+          for (const ib of order) {
+            if (h < hmin[icc * nb + ib]) { flush(); continue; }
+            const rem = [];
+            for (const [db, dc] of dRem) { const jb = ib + db, jc = icc + dc; if (jb < 0 || jc < 0 || jb >= nb || jc >= nc) continue; const q = q3(ia, jb, jc); if (inSet[q] && !planned[q]) { planned[q] = 1; rem.push(q); } }
+            run.push({ ib, ic: icc, rem });
+          }
+          flush();
+          if (icc === nc - 1) break;
+        }
+      }
+    }
+    if (last) path.push({ p: clear(last.ib, last.ic), R: radii[radii.length - 1], rapid: true, rem: [] });
+    const residual = vox.filter(q => inSet[q] && !planned[q]);
+    return { path, residual, fr };
+  }
+  // shared playback of a planned path
+  playPath(V, st, u, worldOf, showTool, toolFor, chipRate) {
+    const path = st.plan.path, N = path.length; if (!N) { showTool(null); return; }
+    const f = u * N, k = Math.min(N - 1, Math.floor(f));
+    st.k = st.k || 0;
+    let cut = false;
+    while (st.k <= k && st.k < N) { const pt = path[st.k++]; for (const q of pt.rem) if (this.hideVox(V, q)) cut = true; }
+    if (u >= 1) { showTool(null); V.inst.instanceMatrix.needsUpdate = true; return; }
+    const A = path[k], B = path[Math.min(N - 1, k + 1)], t = f - k;
+    const tool = toolFor(A.R); showTool(tool);
+    const wa = worldOf(A.p), wb = worldOf(B.p);
+    tool.position.copy(wa.lerp(wb, A.rapid && B.rapid ? t : (B.rapid ? 0 : t)));
+    tool.rotation.z += A.rapid ? 0.2 : 0.9;
+    if (cut) this.emitChips(tool.position.clone(), chipRate, 60);
+    V.inst.instanceMatrix.needsUpdate = true;
+  }
+  millSeg(o, vox, V, dir, millD, axLen, worldOf, showTool) {
+    const G = V.G, vl = Math.max(G.vx, G.vy, G.vz);
+    const R1 = millD / 2, R2 = Math.max(0.9 * vl, R1 / 2.5);
+    const radii = R2 < R1 * 0.8 ? [R1, R2] : [R1];
+    const toolFor = R => this._getTool('mill', 2 * R, axLen + 8);
+    return { label: o.label, sub: `Ø${millD.toFixed(0)} roughing end mill${radii.length > 1 ? `, Ø${(2 * R2).toFixed(0)} for rest material` : ''} · collision-checked path`, mc: MC_NAME(o.machine), cls: 'k-mill', dur: Math.min(11, 2.5 + Math.sqrt(vox.length) / 16), apply: (u, st) => {
+      if (!st.plan) st.plan = this.planMill(V, vox, dir, radii);
+      this.playPath(V, st, u, worldOf, showTool, toolFor, 2);
+    } };
+  }
+  // dense samples of the true part surface (frame coords), bucketed by voxel column for each tool axis
+  surfaceSamples(V, fr) {
+    V._samp = V._samp || {};
+    const key = fr.a; if (V._samp[key]) return V._samp[key];
+    const pa = V.part.geometry.attributes.position.array, G = V.G, { a, b, c, vs } = fr, mn = G.min, nb = fr.nb, nc = fr.nc;
+    const buckets = new Map();
+    const put = (x) => { const ib = Math.floor((x[b] - mn[b]) / vs[b]), ic = Math.floor((x[c] - mn[c]) / vs[c]); const k = ic * 4096 + ib; let arr = buckets.get(k); if (!arr) buckets.set(k, arr = []); arr.push(x[0], x[1], x[2]); };
+    for (let i = 0; i < pa.length; i += 9) {
+      const A = [pa[i], pa[i + 1], pa[i + 2]], B = [pa[i + 3], pa[i + 4], pa[i + 5]], C = [pa[i + 6], pa[i + 7], pa[i + 8]];
+      const e = Math.max(Math.hypot(B[0] - A[0], B[1] - A[1], B[2] - A[2]), Math.hypot(C[0] - A[0], C[1] - A[1], C[2] - A[2]), Math.hypot(C[0] - B[0], C[1] - B[1], C[2] - B[2]));
+      const n = Math.max(1, Math.ceil(e / 1.0));
+      for (let u = 0; u <= n; u++) for (let v = 0; v <= n - u; v++) { const p = u / n, q = v / n, r = 1 - p - q; put([A[0] * r + B[0] * p + C[0] * q, A[1] * r + B[1] * p + C[1] * q, A[2] * r + B[2] * p + C[2] * q]); }
+    }
+    return (V._samp[key] = buckets);
+  }
+  // move a tool tip (frame coords) sideways, then up, until the cutter of radius R clears every surface sample above its tip
+  safeTip(V, fr, p, R) {
+    const bk = this.surfaceSamples(V, fr), { a, b, c, vs, D } = fr, mn = V.G.min;
+    const up = D.s; const q = p.slice(); const clr = R + 0.2;
+    for (let it = 0; it < 6; it++) {
+      const ib = Math.floor((q[b] - mn[b]) / vs[b]), ic = Math.floor((q[c] - mn[c]) / vs[c]);
+      let worst = null, wd = 0;
+      for (let dc = -1; dc <= 1; dc++) for (let db = -1; db <= 1; db++) {
+        const arr = bk.get((ic + dc) * 4096 + ib + db); if (!arr) continue;
+        for (let k = 0; k < arr.length; k += 3) {
+          if ((arr[k + a] - q[a]) * up <= 0.15) continue;
+          const lb = arr[k + b] - q[b], lc = arr[k + c] - q[c], d = Math.hypot(lb, lc);
+          if (d < clr && clr - d > wd) { wd = clr - d; worst = [lb, lc, d]; }
+        }
+      }
+      if (!worst) return q;
+      if (it < 4 && worst[2] > 1e-6) { q[b] -= worst[0] / worst[2] * (wd + 0.05); q[c] -= worst[1] / worst[2] * (wd + 0.05); }
+      else {
+        // still blocked: lift the tip above every sample within reach
+        let top = q[a]; for (let dc = -1; dc <= 1; dc++) for (let db = -1; db <= 1; db++) { const arr = bk.get((ic + dc) * 4096 + ib + db); if (!arr) continue; for (let k = 0; k < arr.length; k += 3) { if (Math.hypot(arr[k + b] - q[b], arr[k + c] - q[c]) < clr) top = up > 0 ? Math.max(top, arr[k + a] + 0.2) : Math.min(top, arr[k + a] - 0.2); } }
+        q[a] = top; return q;
+      }
+    }
+    return q;
+  }
+  // finishing: small cutter takes off the skin the roughing pass had to leave near the part, layer by layer
+  skinSeg(o, vox, V, dir, axLen, worldOf, showTool) {
+    const G = V.G, vl = Math.max(G.vx, G.vy, G.vz); const R = Math.max(0.75, 0.45 * Math.min(G.vx, G.vy, G.vz));
+    const toolFor = () => this._getTool('mill', 2 * R, axLen + 8);
+    return { label: o.label, sub: `Ø${(2 * R).toFixed(1)} finishing cutter follows the part wall · ${MFG.TOL[$('#tol').value].name}`, mc: MC_NAME(o.machine), cls: 'k-mill', dur: 2.6, apply: (u, st) => {
+      if (!st.plan) {
+        const fr = this.millFrame(V, dir), { a, b, c, H, tip, clear } = fr;
+        const res = vox.filter(q => G.state[q] === 1 && this.alive(V, q)).map(q => { const ijk = [q % G.nx, Math.floor(q / G.nx) % G.ny, Math.floor(q / (G.nx * G.ny))]; return { q, h: H(ijk[a]), ib: ijk[b], ic: ijk[c] }; });
+        res.sort((x, y) => y.h - x.h);
+        const path = []; let i = 0, last = null;
+        while (i < res.length) {
+          const h = res[i].h; const layer = []; while (i < res.length && res[i].h === h) layer.push(res[i++]);
+          const used = new Uint8Array(layer.length); let cur = 0;
+          for (let m = 0; m < layer.length; m++) {
+            used[cur] = 1; const x = layer[cur];
+            const near = last && last.h === h && Math.abs(last.ib - x.ib) <= 1 && Math.abs(last.ic - x.ic) <= 1;
+            if (!near) { if (last) path.push({ p: clear(last.ib, last.ic), R, rapid: true, rem: [] }); path.push({ p: clear(x.ib, x.ic), R, rapid: true, rem: [] }); }
+            path.push({ p: this.safeTip(V, fr, tip(x.ib, x.ic, h, true), R), R, rapid: false, rem: [x.q] }); last = x;
+            let bi = -1, bd = 1e9; for (let j = 0; j < layer.length; j++) if (!used[j]) { const d = Math.abs(layer[j].ib - x.ib) + Math.abs(layer[j].ic - x.ic); if (d < bd) { bd = d; bi = j; if (d === 1) break; } }
+            if (bi < 0) break; cur = bi;
+          }
+        }
+        if (last) path.push({ p: clear(last.ib, last.ic), R, rapid: true, rem: [] });
+        st.plan = { path };
+      }
+      this.playPath(V, st, u, worldOf, showTool, toolFor, 1);
+      this.finishGlow(u);
+    } };
+  }
+  finishSeg(o, V, P, tool, worldOf, showTool, route, isFace) {
+    // trace the part outline at a few heights in world space
+    const box = new THREE.Box3().setFromObject(V.part);
+    return { label: o.label, sub: isFace ? 'Face mill to thickness' : `Ø${tool.userData.d.toFixed(0)} finishing pass, ${MFG.TOL[$('#tol').value].name}`, mc: MC_NAME(o.machine), cls: 'k-mill', dur: 2.6, apply: (u, st) => {
+      showTool(u < 1 ? tool : null);
+      const b = new THREE.Box3().setFromObject(V.part); const r = tool.userData.d / 2;
+      const per = 2 * ((b.max.x - b.min.x) + (b.max.y - b.min.y)); let s = (u * 2 % 1) * per; const zl = u < 0.5 ? b.max.z : b.min.z + (b.max.z - b.min.z) * 0.35;
+      const W = b.max.x - b.min.x + 2 * r, H = b.max.y - b.min.y + 2 * r; const x0 = b.min.x - r, y0 = b.min.y - r;
+      let x, y; s = s / per * 2 * (W + H);
+      if (s < W) { x = x0 + s; y = y0; } else if (s < W + H) { x = x0 + W; y = y0 + s - W; } else if (s < 2 * W + H) { x = x0 + W - (s - W - H); y = y0 + H; } else { x = x0; y = y0 + H - (s - 2 * W - H); }
+      if (isFace) {
+        x = b.min.x + (b.max.x - b.min.x) * u; y = (b.min.y + b.max.y) / 2 + Math.sin(u * 40) * (b.max.y - b.min.y) * 0.45;
+        if (!st.layer) { const G = V.G; st.layer = V.ids.filter(q => { if (!this.alive(V, q)) return false; const k = Math.floor(q / (G.nx * G.ny)); const z = G.center(0, 0, k)[2]; return o.dir === '-Z' ? z < 0 : z > P.size[2]; }); st.k = 0; }
+        const tgt = Math.floor(u * st.layer.length); while (st.k < tgt) this.hideVox(V, st.layer[st.k++]); V.inst.instanceMatrix.needsUpdate = true;
+      }
+      tool.position.set(x, y, isFace ? b.max.z : zl); tool.rotation.z += 0.9;
+      this.finishGlow(u);
+      this.emitChips(new THREE.Vector3(x, y, zl), 1, 40);
+    } };
+  }
+  finishGlow(u) { if (this.V && this.V.part) { this.V.part.material.roughness = 0.38 - 0.12 * Math.min(1, u); } }
+  holeSeg(o, h, V, tool, worldOf, showTool, route) {
+    const at = h.entry ? h.entry.at : h.point; const toward = h.entry ? h.entry.toward : h.u;
+    const atV = new THREE.Vector3(...at), tw = new THREE.Vector3(...toward);
+    const depth = h.depth; const plugs = V.plugs[h.hid] || [];
+    const sub = o.kind === 'tap' ? 'Rigid tapping cycle' : o.kind === 'bore' ? 'Helical interpolation with end mill' : `Ø${h.d.toFixed(1)} carbide drill${depth > 3 * h.d ? ', peck cycle' : ''}`;
+    return { label: o.label, sub, mc: MC_NAME(o.machine), cls: 'k-hole', dur: o.kind === 'tap' ? 1.4 : 1.8, apply: (u) => {
+      showTool(u < 1 ? tool : null);
+      // approach 0–0.15, feed 0.15–0.85, retract
+      let f = u < 0.15 ? 0 : u < 0.85 ? (u - 0.15) / 0.7 : 1 - (u - 0.85) / 0.15;
+      const peck = depth > 3 * h.d && u > 0.15 && u < 0.85 ? Math.max(0, Math.sin(u * 60)) * 0.08 : 0;
+      const dpos = Math.max(0, f - peck) * (depth + (o.kind === 'tap' ? 0 : h.d * 0.3));
+      const clear = (1 - Math.min(1, u / 0.15)) * 15 + (u > 0.85 ? (u - 0.85) / 0.15 * 15 : 0);
+      const p = atV.clone().addScaledVector(tw, dpos - clear - (u >= 0.85 ? 0 : 0));
+      const w = worldOf([p.x, p.y, p.z]);
+      tool.position.copy(w); tool.rotation.z += o.kind === 'tap' ? 0.3 : 1.1;
+      if (o.kind === 'bore' && u > 0.15 && u < 0.85) { const ang = u * 50; const rr = Math.max(0, h.d / 2 - tool.userData.d / 2); tool.position.x += Math.cos(ang) * rr; tool.position.y += Math.sin(ang) * rr; }
+      if (o.kind !== 'tap') {
+        const prog = u < 0.15 ? 0 : Math.min(1, (u - 0.15) / 0.7);
+        const c = prog * (depth + 0.01);
+        for (const m of plugs) {
+          const ud = m.userData; const sgn = ud.ax.dot(tw) >= 0 ? 1 : -1;
+          const s0 = ud.base.clone().sub(atV).dot(tw), s1 = s0 + sgn * ud.L;
+          const lo = Math.min(s0, s1), hi = Math.max(s0, s1), nlo = Math.max(lo, c);
+          if (nlo >= hi - 1e-6) { m.visible = false; continue; }
+          m.visible = true; const rem = hi - nlo; m.scale.y = rem / ud.L;
+          if (sgn > 0) m.position.copy(atV).addScaledVector(tw, nlo); else m.position.copy(ud.base);
+        }
+        if (prog > 0 && prog < 1) this.emitChips(w, 1, 50);
+      }
+    } };
+  }
+  doneSeg(route, showTool, V) {
+    return { label: 'Finished part', sub: `${route.name} · ${fmt(route.cost.cycleMin, 1)} min/part · ${rs(route.cost.perPart)}/part`, mc: '', cls: 'k-setup', dur: 2.5, apply: (u, st) => {
+      showTool(null);
+      if (V && !st.cleared) { st.cleared = true; for (const q of V.ids) this.hideVox(V, q); V.inst.instanceMatrix.needsUpdate = true; for (const k in V.plugs) V.plugs[k].forEach(m => m.visible = false); }
+      if (this._placeRig) { if (!st.q0) st.q0 = this.rig.pivot.quaternion.clone(); this._placeRig(new THREE.Quaternion().slerpQuaternions(st.q0, new THREE.Quaternion(), this.ease(Math.min(1, u * 2)))); }
+      if (this.lathe) this.lathe.finalShow(u);
+    } };
+  }
+  silhouettePath(G, P) {
+    // boundary cells of the silhouette ordered by walking neighbours
+    const sil = (i, j) => i >= 0 && j >= 0 && i < G.nx && j < G.ny && G.colIntervals[j * G.nx + i].length > 0;
+    const pts = []; for (let j = 0; j < G.ny; j++) for (let i = 0; i < G.nx; i++) if (sil(i, j) && (!sil(i + 1, j) || !sil(i - 1, j) || !sil(i, j + 1) || !sil(i, j - 1))) pts.push([i, j]);
+    if (!pts.length) return [];
+    const used = new Uint8Array(pts.length); const out = []; let cur = 0; used[0] = 1;
+    for (let n = 0; n < pts.length; n++) { const [i, j] = pts[cur]; const c = G.center(i, j, 0); out.push([c[0], c[1], P.sMax[2]]); let best = -1, bd = 1e9; for (let m = 0; m < pts.length; m++) if (!used[m]) { const d = Math.abs(pts[m][0] - i) + Math.abs(pts[m][1] - j); if (d < bd) { bd = d; best = m; if (d === 1) break; } } if (best < 0) break; used[best] = 1; cur = best; }
+    return out;
+  }
+  makeBeam(M) { const g = new THREE.Group(); const head = new THREE.Mesh(new THREE.CylinderGeometry(8, 12, 40, 24).rotateX(Math.PI / 2), M.holder); head.position.z = 30; const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.6, 12, 8).rotateX(Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xff7a1a })); beam.position.z = 4; g.add(head, beam); g.visible = false; return g; }
+  makeWire(M, h) { const g = new THREE.Group(); const w = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.4, h, 6).rotateX(Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xd6b24a })); const top = new THREE.Mesh(new THREE.BoxGeometry(22, 22, 14), M.holder); top.position.z = h / 2 + 7; const bot = top.clone(); bot.position.z = -h / 2 - 7; g.add(w, top, bot); g.visible = false; return g; }
+
+  // ---------- turned ----------
+  buildTurned(route, S) {
+    const Tn = S.turned, M = this.M;
+    const R = Tn.barD / 2, L = Tn.L, NB = Tn.NB, db = Tn.db;
+    const extL = Tn.barFed ? 3 + 25 : 15, extR = 2;
+    const nL = Math.ceil(extL / db), nR = Math.ceil(extR / db);
+    const N = nL + NB + nR; const x0 = -nL * db;
+    const tgtOut = new Float64Array(N), tgtIn = new Float64Array(N);
+    for (let b = 0; b < N; b++) { const pb = b - nL; if (pb < 0) { tgtOut[b] = R; tgtIn[b] = 0; } else if (pb >= NB) { tgtOut[b] = 0; tgtIn[b] = 0; } else { tgtOut[b] = Tn.rOut[pb]; tgtIn[b] = Tn.rIn[pb]; } }
+    const cur = { out: new Float64Array(N), inn: new Float64Array(N), present: new Uint8Array(N) };
+    const lathe = this.lathe = { cur, N, x0, db, nL, NB, spin: null };
+    const group = new THREE.Group(); this.world.add(group); // lathe axis = world X
+    // spinning stock
+    const tex = this.stripeTexture();
+    const stockMat = new THREE.MeshStandardMaterial({ color: M.part.color.clone().multiplyScalar(0.9), metalness: 0.85, roughness: 0.35, map: tex, side: THREE.DoubleSide });
+    const spin = new THREE.Group(); group.add(spin); lathe.spin = spin;
+    let mesh = null;
+    const rebuild = () => {
+      const pts = [];
+      // walk present bins: outline from left outer → right, then inner back
+      let first = -1, last = -1; for (let b = 0; b < N; b++) if (cur.present[b] && cur.out[b] > 0) { if (first < 0) first = b; last = b; }
+      if (first < 0) { if (mesh) mesh.visible = false; return; }
+      const xs = b => x0 + b * db;
+      pts.push(new THREE.Vector2(Math.max(cur.inn[first], 0.0001), xs(first)));
+      for (let b = first; b <= last; b++) { const r = cur.present[b] ? cur.out[b] : 0.0001; pts.push(new THREE.Vector2(Math.max(r, 0.0001), xs(b))); pts.push(new THREE.Vector2(Math.max(r, 0.0001), xs(b + 1))); }
+      for (let b = last; b >= first; b--) { const r = cur.present[b] ? cur.inn[b] : 0; pts.push(new THREE.Vector2(Math.max(r, 0.0001), xs(b + 1))); pts.push(new THREE.Vector2(Math.max(r, 0.0001), xs(b))); }
+      pts.push(pts[0].clone());
+      const g = new THREE.LatheGeometry(pts, 56);
+      if (mesh) { mesh.geometry.dispose(); mesh.geometry = g; mesh.visible = true; } else { mesh = new THREE.Mesh(g, stockMat); mesh.rotation.z = -Math.PI / 2; spin.add(mesh); }
+    };
+    lathe.rebuild = rebuild; lathe.dirty = true;
+    // chuck
+    const chuck = new THREE.Group(); group.add(chuck);
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(R * 2.2 + 20, R * 2.2 + 20, 45, 48).rotateZ(Math.PI / 2), M.jaw); body.position.x = x0 - 22.5 - (Tn.barFed ? 0 : 0); chuck.add(body);
+    for (let k = 0; k < 3; k++) { const jaw = new THREE.Mesh(new THREE.BoxGeometry(Math.min(extL, 22), 12, R * 0.9 + 8), M.holder); const a = k * 2 * Math.PI / 3; jaw.position.set(x0 + Math.min(extL, 22) / 2, Math.cos(a) * (R + 6), Math.sin(a) * (R + 6)); jaw.rotation.x = a + Math.PI / 2; chuck.add(jaw); }
+    spin.add(chuck); // jaws spin with stock
+    // tool post + insert (tool tip at origin; insert points toward -Y)
+    const tool = new THREE.Group(); group.add(tool);
+    const insertMat = new THREE.MeshStandardMaterial({ color: 0xd4b04a, metalness: 0.7, roughness: 0.35 });
+    // 35° diamond insert, tip at the origin, body trailing away from the part (−Y) and to the right (+X)
+    const insShape = new THREE.Shape(); insShape.moveTo(0, 0); insShape.lineTo(2.2, -6); insShape.lineTo(0.8, -12); insShape.lineTo(-1.4, -6); insShape.lineTo(0, 0);
+    const ins = new THREE.Mesh(new THREE.ExtrudeGeometry(insShape, { depth: 3, bevelEnabled: false }).translate(0, 0, -1.5), insertMat); tool.add(ins);
+    const shank = new THREE.Mesh(new THREE.BoxGeometry(12, 60, 12), M.holder); shank.position.set(3, -42, 0); tool.add(shank);
+    const post = new THREE.Mesh(new THREE.BoxGeometry(40, 30, 40), M.jaw); post.position.set(3, -85, 0); tool.add(post);
+    const drill = new THREE.Group(); group.add(drill);
+    const dBody = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 1, 20).rotateZ(Math.PI / 2), M.cutter); drill.add(dBody);
+    const tail = new THREE.Mesh(new THREE.CylinderGeometry(18, 18, 50, 32).rotateZ(Math.PI / 2), M.jaw); drill.add(tail);
+    drill.visible = false;
+    this.chips = this.makeChips(M); this.world.add(this.chips);
+    // final part mesh (shown at end / for secondary ops)
+    let V = null, rig = null;
+    const sec = route.ops.filter(o => o.sec);
+    const partMesh = new THREE.Mesh(this.partGeometry(Tn.F), M.part);
+    if (sec.length) {
+      V = this.V = this.buildVoxelWork(Tn.G, Tn.F, Tn.holes, M.part, new THREE.MeshStandardMaterial({ color: M.part.color, metalness: 0.85, roughness: 0.35 }), M.plug);
+      rig = this.rig = this.makeRig(V.work, [L / 2, 0, 0]); rig.pivot.visible = false;
+      V.part.material = M.part;
+    } else { partMesh.visible = false; group.add(partMesh); }
+    const segs = this.segs; const self = this;
+    const toolAt = (x, r) => {
+      // keep the insert's trailing flank out of material already turned to the right of the tip
+      let rs = r;
+      for (let b = 0; b < N; b++) { if (!cur.present[b]) continue; const bx = x0 + (b + 0.5) * db - x; if (bx <= 0.05 || bx > 2.2) continue; rs = Math.max(rs, cur.out[b] - 6 * bx / 2.2); }
+      tool.visible = true; tool.position.set(x, -rs, 0);
+    };
+    this.resetFns = [() => {
+      for (let b = 0; b < N; b++) { cur.out[b] = R; cur.inn[b] = 0; cur.present[b] = 1; }
+      lathe.dirty = true; group.visible = true; tool.visible = false; drill.visible = false; spin.position.x = 0; spin.visible = true;
+      if (V) { self.resetVox(V); rig.pivot.visible = false; rig.pivot.quaternion.identity(); rig.pivot.position.set(0, 0, 0); }
+      partMesh.visible = false; self.spinOn = false;
+    }];
+    lathe.finalShow = (u) => { if (!V) { spin.visible = u < 0.3; partMesh.visible = u >= 0.3; tool.visible = false; drill.visible = false; self.spinOn = false; } };
+    const spinSeg = (o, sub, dur, fn, cls) => segs.push({ label: o.label, sub, mc: MC_NAME(o.machine), cls: cls || 'k-turn', dur, apply: (u, st) => { self.spinOn = u > 0 && u < 1; drill.visible = false; fn(u, st); lathe.dirty = true; } });
+    const sawOp = route.ops.find(o => o.kind === 'saw');
+    if (sawOp) segs.push({ label: sawOp.label, sub: route.stock.desc, mc: 'Bandsaw', cls: 'k-cut', dur: 1.4, apply: (u) => { spin.position.x = (1 - this.ease(u)) * (L + 60); tool.visible = false; } });
+    else segs.push({ label: 'Feed bar through collet', sub: route.stock.desc, mc: MC_NAME(route.machineKey), cls: 'k-setup', dur: 1.2, apply: (u) => { spin.position.x = (1 - this.ease(u)) * -(L * 0.8); tool.visible = false; } });
+    for (const o of route.ops) {
+      if (o.kind === 'face' && o.setup === 0) spinSeg(o, 'CNMG insert · constant surface speed', 1.6, (u) => {
+        const xf = x0 + (nL + NB) * db; const r = R * (1 - u); toolAt(xf, r);
+        if (u >= 1) for (let b = nL + NB; b < N; b++) cur.present[b] = 0; else self.emitChips(new THREE.Vector3(xf, -r, 0), 1, 50);
+      });
+      else if (o.kind === 'turn-rough') {
+        const minT = Math.min(...Tn.rOut.filter(r => r > 0));
+        const passes = Math.max(1, Math.min(6, Math.ceil((R - minT) / Math.max(1.5, (R - minT) / 5))));
+        spinSeg(o, `${passes} roughing pass(es) · DOC ${((R - minT) / passes).toFixed(1)} mm`, Math.min(9, 2 + passes * 1.2), (u) => {
+          const pf = u * passes; const p = Math.min(passes - 1, Math.floor(pf)); const f = pf - p;
+          const level = R - (p + 1) * (R - minT) / passes;
+          for (let pp = 0; pp < p; pp++) { const lv = R - (pp + 1) * (R - minT) / passes; for (let b = nL; b < nL + NB; b++) cur.out[b] = Math.min(cur.out[b], Math.max(tgtOut[b] + 0.3, lv)); }
+          const bi = Math.floor((1 - f) * NB) + nL; // right → left
+          for (let b = Math.max(nL, bi); b < nL + NB; b++) cur.out[b] = Math.min(cur.out[b], Math.max(tgtOut[b] + 0.3, level));
+          if (u >= 1) for (let b = nL; b < nL + NB; b++) cur.out[b] = Math.min(cur.out[b], Math.max(tgtOut[b] + 0.3, minT + 0.3));
+          const bb = Math.min(nL + NB - 1, Math.max(nL, bi)); toolAt(x0 + bb * db, Math.max(tgtOut[bb] + 0.3, level));
+          if (u < 1) self.emitChips(new THREE.Vector3(x0 + bb * db, -level, 0), 2, 60);
+        });
+      } else if (o.kind === 'turn-finish') spinSeg(o, 'VNMG finishing insert follows the profile', 2.6, (u) => {
+        const bi = Math.floor((1 - u) * NB) + nL;
+        for (let b = Math.max(nL, bi); b < nL + NB; b++) cur.out[b] = tgtOut[b];
+        if (u >= 1) for (let b = nL; b < nL + NB; b++) cur.out[b] = tgtOut[b];
+        const bb = Math.min(nL + NB - 1, Math.max(nL, bi)); toolAt(x0 + bb * db, tgtOut[bb]);
+        if (u < 1) self.emitChips(new THREE.Vector3(x0 + bb * db, -tgtOut[bb], 0), 1, 40);
+      });
+      else if (o.kind === 'turn-drill') { const rD = (o.dDrill || 6) / 2; segs.push({ label: o.label, sub: 'Tailstock / turret drill', mc: MC_NAME(o.machine), cls: 'k-hole', dur: 2, apply: (u) => {
+        self.spinOn = u > 0 && u < 1; tool.visible = false; drill.visible = u < 1; dBody.scale.set(L + 20, rD, rD); dBody.position.x = (L + 20) / 2; tail.position.x = L + 20 + 25;
+        const depth = u * (L + 1); drill.position.x = x0 + (nL + NB) * db - depth;
+        for (let b = nL; b < nL + NB; b++) { const bx = x0 + b * db; if (bx >= x0 + (nL + NB) * db - depth && tgtIn[b] > 0) cur.inn[b] = Math.max(cur.inn[b], Math.min(rD, tgtIn[b])); }
+        lathe.dirty = true;
+      } }); }
+      else if (o.kind === 'turn-bore') spinSeg(o, 'Boring bar opens the bore to size', 2.4, (u) => {
+        const bi = Math.floor((1 - u) * NB) + nL;
+        for (let b = Math.max(nL, bi); b < nL + NB; b++) if (tgtIn[b] > 0) cur.inn[b] = tgtIn[b];
+        const bb = Math.min(nL + NB - 1, Math.max(nL, bi)); tool.visible = u < 1; tool.position.set(x0 + bb * db, -Math.max(tgtIn[bb] - 3, 0), 0);
+      });
+      else if (o.kind === 'part') spinSeg(o, 'Parting blade, 3 mm', 1.8, (u) => {
+        toolAt(x0 + (nL - 1) * db, R * (1 - u));
+        if (u >= 1) { for (let b = 0; b < nL; b++) cur.present[b] = 0; }
+        else self.emitChips(new THREE.Vector3(x0, -R * (1 - u), 0), 1, 40);
+      });
+      else if (o.kind === 'face' && o.setup === 1) spinSeg(o, 'Flip in soft jaws, face to length', 2.2, (u) => {
+        toolAt(x0 + nL * db, R * (1 - u)); if (u >= 1) for (let b = 0; b < nL; b++) cur.present[b] = 0;
+      }, 'k-turn');
+    }
+    // secondary on VMC / live tooling
+    if (sec.length) {
+      const tools = {}; const getTool = (kind, d, L) => { const k = kind + d.toFixed(1) + ':' + Math.round(L || 0); if (!tools[k]) { tools[k] = this.makeTool(kind, d, M, L); tools[k].visible = false; this.world.add(tools[k]); } return tools[k]; };
+      this._getTool = getTool;
+      const showTool = (t) => Object.values(tools).forEach(x => x.visible = x === t);
+      const half = [L / 2, R, R];
+      const placeRig = (q) => { rig.pivot.quaternion.copy(q); rig.pivot.position.set(L / 2, 0, R + 4); this.topZ = 2 * R + 4; };
+      this._placeRig = (q) => { placeRig(q); };
+      const worldOf = (p) => { rig.pivot.updateMatrixWorld(true); return rig.off.localToWorld(new THREE.Vector3(...p)); };
+      segs.push({ label: route.id === 'turn-mill' ? 'Engage live tooling' : 'Move to VMC', sub: route.id === 'turn-mill' ? 'C-axis indexes the part; no re-clamp' : 'Clamp turned part in a V-block fixture', mc: route.id === 'turn-mill' ? 'Turn-mill' : 'VMC 3-axis', cls: 'k-setup', dur: 1.4, apply: (u) => {
+        self.spinOn = false; tool.visible = false; drill.visible = false;
+        group.visible = u < 0.5; rig.pivot.visible = u >= 0.5; showTool(null); placeRig(new THREE.Quaternion());
+      } });
+      const byDir = {}; sec.forEach(o => { const d = o.dir || (Tn.holeInfo.find(h => h.hid === o.hid) || {}).setupDir || '+Z'; (byDir[d] = byDir[d] || []).push(o); });
+      for (const [d, ops] of Object.entries(byDir)) {
+        const q = this.dirQuat(d);
+        segs.push({ label: route.id === 'turn-mill' ? `Index C-axis to ${d}` : `Re-clamp, tool from ${d}`, sub: '', mc: '', cls: 'k-setup', dur: 1.1, apply: (u, st) => { if (!st.q0) st.q0 = rig.pivot.quaternion.clone(); showTool(null); group.visible = false; rig.pivot.visible = true; placeRig(new THREE.Quaternion().slerpQuaternions(st.q0, q, this.ease(u))); } });
+        for (const o of ops) {
+          if (o.kind === 'rough') { const mD = Math.min(16, Math.max(4, Math.max(Tn.G.vx, Tn.G.vy) * 2)); segs.push(this.millSeg(o, o.voxels || [], V, d, mD, 2 * R, worldOf, showTool)); segs.push(this.skinSeg({ label: 'Finish milled faces', machine: o.machine }, o.voxels || [], V, d, 2 * R, worldOf, showTool)); }
+          else { const h = Tn.holeInfo.find(x => x.hid === o.hid); if (h) segs.push(this.holeSeg(o, h, V, getTool(o.kind === 'bore' ? 'mill' : o.kind, o.kind === 'bore' ? Math.max(4, h.d * 0.6) : h.d, h.depth + 2 * R + 22), worldOf, showTool, route)); }
+        }
+      }
+      segs.push(this.doneSeg(route, showTool, V));
+    } else { this._placeRig = null; segs.push(this.doneSeg(route, () => {}, null)); }
+    this.frameCamera([L + 80, 2 * R + 60, 2 * R + 60], [L / 2, 0, 0]);
+  }
+  stripeTexture() {
+    const c = document.createElement('canvas'); c.width = 256; c.height = 16; const g = c.getContext('2d');
+    for (let x = 0; x < 256; x++) { const v = 200 + Math.round(40 * Math.sin(x / 256 * Math.PI * 6) + (Math.random() - 0.5) * 30); g.fillStyle = `rgb(${v},${v},${v})`; g.fillRect(x, 0, 1, 16); }
+    const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace; return t;
+  }
+
+  // ---------- timeline ----------
+  drawTimeline() {
+    const tl = $('#tl'); tl.querySelectorAll('.seg').forEach(e => e.remove());
+    for (const g of this.segs) { const d = document.createElement('div'); d.className = 'seg ' + g.cls; d.style.left = (g.start / this.total * 100) + '%'; d.style.width = (g.dur / this.total * 100) + '%'; d.title = g.label; tl.insertBefore(d, $('#tlHead')); }
+  }
+  seek(t) {
+    t = Math.max(0, Math.min(this.total, t));
+    this.resetFns.forEach(f => f());
+    this.segs.forEach(g => g.st = {});
+    this.t = 0; this.curSeg = -1;
+    this.advanceTo(t);
+  }
+  advanceTo(t) {
+    let cur = 0;
+    for (let i = 0; i < this.segs.length; i++) {
+      const g = this.segs[i]; if (g.start > t) break; cur = i;
+      g.st = g.st || {}; if (g.st.done) continue;
+      const u = g.dur > 0 ? Math.min(1, (t - g.start) / g.dur) : 1;
+      try { g.apply(u, g.st); } catch (e) { g.st.done = true; if (!this._segErr) { this._segErr = true; __showErr('step "' + g.label + '": ' + e.message); } continue; }
+      if (u >= 1) g.st.done = true;
+    }
+    this.t = t; this.curSeg = cur;
+    const g = this.segs[cur];
+    if (g) { $('#hudOp').textContent = g.label; $('#hudSub').textContent = g.sub || ''; $('#hudMc').textContent = g.mc || ''; }
+    $('#hudT').textContent = `${t.toFixed(1)} / ${this.total.toFixed(1)} s`;
+    $('#tlHead').style.left = (this.total ? t / this.total * 100 : 0) + '%';
+    $('#tl').setAttribute('aria-valuenow', String(Math.round(this.total ? t / this.total * 100 : 0)));
+  }
+  setPlaying(p) { this.playing = p; $('#play').textContent = p ? '❚❚ Pause' : '▶ Play'; }
+  tick() {
+    const dt = Math.min(0.05, this.clock.getDelta());
+    if (this.playing && this.total) {
+      let t = this.t + dt * this.speed;
+      if (t >= this.total) { t = this.total; this.setPlaying(false); }
+      this.advanceTo(t);
+    }
+    if (this.lathe && this.lathe.dirty) { this.lathe.rebuild(); this.lathe.dirty = false; }
+    if (this.spinOn && this.lathe && this.lathe.spin) this.lathe.spin.rotation.x += dt * 25;
+    try {
+      this.stepChips(dt);
+      this.controls.update();
+      this.renderer.render(this.scene, this.camera);
+    } catch (e) { if (!this._errShown) { this._errShown = true; window.__showErr && __showErr('render: ' + e.message); } }
+  }
+}
+
+let sim;
+try { sim = new Sim($('#stage')); window.__simReady = true; $('#vpMsg').textContent = 'Load a part to start'; }
+catch (e) { $('#vpMsg').textContent = 'WebGL is not available in this browser, so the simulation is off. Quoting still works.'; sim = { setPart() {}, setRoute() {}, seek() {}, setPlaying() {} }; }
+
+$('#play').addEventListener('click', () => { if (!sim.total) return; if (sim.t >= sim.total) sim.seek(0); sim.setPlaying(!sim.playing); });
+$('#restart').addEventListener('click', () => { sim.seek(0); sim.setPlaying(true); });
+const tl = $('#tl');
+const tlSeek = (e) => { const r = tl.getBoundingClientRect(); const u = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)); sim.seek(u * sim.total); };
+let drag = false;
+tl.addEventListener('pointerdown', e => { drag = true; tl.setPointerCapture(e.pointerId); sim.setPlaying(false); tlSeek(e); });
+tl.addEventListener('pointermove', e => { if (drag) tlSeek(e); });
+tl.addEventListener('pointerup', () => drag = false);
+tl.addEventListener('keydown', e => { if (e.key === 'ArrowRight') sim.seek(sim.t + 1); if (e.key === 'ArrowLeft') sim.seek(sim.t - 1); });
+document.querySelectorAll('#speed button').forEach(b => b.addEventListener('click', () => { sim.speed = +b.dataset.s; document.querySelectorAll('#speed button').forEach(x => x.setAttribute('aria-pressed', x === b)); }));
+$('#view').addEventListener('click', () => { if (!sim.total) return; sim.setPlaying(false); sim.seek(sim.total); });
+
+// boot: load the STEP reader then the first sample
+(async () => {
+  try { await getOcct(); setStatus('STEP reader ready.'); await loadSample('slider'); }
+  catch (e) { setStatus(e.message || 'The STEP reader failed to start.', true); }
+})();
+</script>
