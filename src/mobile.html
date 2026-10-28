@@ -1,0 +1,740 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>QuickFab</title>
+<meta name="description" content="Upload a STEP file, get a process plan, an Indian-market machining quote and a stock-to-part simulation.">
+<meta name="theme-color" content="#f2f2f7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="QuickFab">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png" sizes="192x192">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<style>
+:root {
+  --bg: #f2f2f7; --cell: #ffffff; --raised: #ffffff; --label: #000000; --label2: rgba(60,60,67,.6); --label3: rgba(60,60,67,.3);
+  --sep: rgba(60,60,67,.2); --fill: rgba(118,118,128,.12); --tint: #007aff; --green: #34c759; --orange: #ff9500; --red: #ff3b30; --indigo: #5856d6;
+  --bar: rgba(249,249,249,.8); --vp1: #2c2c2e; --vp2: #161618;
+  --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", "Segoe UI", Roboto, system-ui, sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, monospace;
+  --tabh: 50px; color-scheme: light;
+}
+@media (prefers-color-scheme: dark) { :root {
+  --bg: #000000; --cell: #1c1c1e; --raised: #636366; --label: #ffffff; --label2: rgba(235,235,245,.6); --label3: rgba(235,235,245,.3);
+  --sep: rgba(84,84,88,.6); --fill: rgba(118,118,128,.24); --tint: #0a84ff; --green: #30d158; --orange: #ff9f0a; --red: #ff453a; --indigo: #5e5ce6;
+  --bar: rgba(22,22,22,.78); --vp1: #2c2c2e; --vp2: #0b0b0c; color-scheme: dark } }
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent }
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100% }
+body { margin: 0; background: var(--bg); color: var(--label); font: 17px/1.29 var(--font); letter-spacing: -.41px; -webkit-font-smoothing: antialiased; min-height: 100dvh }
+button, input, select { font: inherit; color: inherit; letter-spacing: inherit }
+button { -webkit-appearance: none; appearance: none; background: none; border: 0; padding: 0; cursor: pointer }
+:focus-visible { outline: 2px solid var(--tint); outline-offset: 2px }
+.num { font-variant-numeric: tabular-nums }
+[hidden] { display: none !important }
+
+/* navigation */
+.nav { position: sticky; top: 0; z-index: 10; padding-top: env(safe-area-inset-top, 0px); background: transparent; transition: background .2s }
+.nav .bar { height: 44px; display: flex; align-items: center; justify-content: center; padding: 0 max(16px, env(safe-area-inset-right, 0px)) 0 max(16px, env(safe-area-inset-left, 0px)); position: relative }
+.nav .t { font-weight: 600; opacity: 0; transition: opacity .2s }
+.nav .act { position: absolute; right: max(16px, env(safe-area-inset-right, 0px)); color: var(--tint); font-size: 17px }
+.nav.stuck { background: var(--bar); -webkit-backdrop-filter: saturate(180%) blur(20px); backdrop-filter: saturate(180%) blur(20px); box-shadow: 0 .33px 0 var(--sep) }
+.nav.stuck .t { opacity: 1 }
+h1.large { font-size: 34px; line-height: 41px; font-weight: 700; letter-spacing: .37px; margin: 0 0 4px; padding: 0 max(20px, env(safe-area-inset-left, 0px)) }
+.lede { color: var(--label2); font-size: 15px; line-height: 20px; letter-spacing: -.24px; margin: 0 20px 22px; max-width: 60ch }
+
+.screen { display: none; padding-bottom: calc(var(--tabh) + env(safe-area-inset-bottom, 0px) + 28px) }
+.screen.on { display: block }
+.wrap { max-width: 720px; margin: 0 auto }
+
+/* grouped inset lists */
+.group { margin: 0 max(16px, env(safe-area-inset-left, 0px)) 32px max(16px, env(safe-area-inset-left, 0px)) }
+.group > h4 { font-size: 13px; line-height: 18px; font-weight: 400; letter-spacing: -.08px; text-transform: uppercase; color: var(--label2); margin: 0 16px 7px }
+.group > .foot { font-size: 13px; line-height: 18px; letter-spacing: -.08px; color: var(--label2); margin: 7px 16px 0 }
+.list { background: var(--cell); border-radius: 10px; overflow: hidden }
+.row { position: relative; display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 11px 16px; width: 100%; text-align: left }
+.row + .row::before, .list > details + details::before, .row + details::before, details + .row::before { content: ""; position: absolute; top: 0; right: 0; left: 16px; height: .5px; background: var(--sep) }
+.list > details { position: relative }
+.row .k { flex: 1 1 auto; min-width: 0 }
+.row .k small { display: block; font-size: 13px; line-height: 18px; color: var(--label2); letter-spacing: -.08px; margin-top: 1px }
+.row .v { color: var(--label2); text-align: right; flex: 0 1 auto; min-width: 0; font-variant-numeric: tabular-nums; overflow-wrap: anywhere }
+.row .v.strong { color: var(--label) }
+.row.tap:active { background: var(--fill) }
+.chev::after { content: ""; width: 8px; height: 8px; border-right: 2px solid var(--label3); border-top: 2px solid var(--label3); transform: rotate(45deg); flex: none; margin-left: 2px; border-radius: 1px }
+.row.sub { min-height: 30px; padding: 14px 16px 4px; font-size: 13px; color: var(--label2); text-transform: uppercase; letter-spacing: -.08px }
+.row.sub::before { display: none }
+.row .ic { width: 29px; height: 29px; border-radius: 7px; display: grid; place-items: center; color: #fff; flex: none }
+.row .ic svg { width: 18px; height: 18px }
+.check { color: var(--tint); font-weight: 600; width: 18px; flex: none; text-align: center }
+.badge { display: inline-block; font-size: 12px; font-weight: 600; letter-spacing: 0; color: var(--green); background: color-mix(in srgb, var(--green) 15%, transparent); border-radius: 5px; padding: 1px 6px; margin-left: 6px; vertical-align: 1px }
+
+/* select rows: native picker on top of the row */
+.pick { position: relative }
+.pick select { position: absolute; inset: 0; opacity: 0; width: 100%; height: 100%; -webkit-appearance: none; appearance: none; font-size: 16px }
+.pick .v::after { content: " ⌃"; display: inline-block; transform: rotate(180deg) translateY(-2px); font-size: 12px; color: var(--label3) }
+
+/* controls */
+.btn { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; height: 50px; border-radius: 12px; background: var(--tint); color: #fff; font-weight: 600 }
+.btn:active { opacity: .7 }
+.btn.tinted { background: color-mix(in srgb, var(--tint) 15%, transparent); color: var(--tint) }
+.btn svg { width: 20px; height: 20px }
+.btn-row { display: flex; gap: 10px; margin: 0 max(16px, env(safe-area-inset-left, 0px)) 32px }
+.link { color: var(--tint) }
+.switch { -webkit-appearance: none; appearance: none; width: 51px; height: 31px; border-radius: 16px; background: var(--fill); position: relative; flex: none; transition: background .2s; margin: 0; cursor: pointer }
+.switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 27px; height: 27px; border-radius: 50%; background: #fff; box-shadow: 0 3px 8px rgba(0,0,0,.15), 0 3px 1px rgba(0,0,0,.06); transition: transform .2s }
+.switch:checked { background: var(--green) }
+.switch:checked::after { transform: translateX(20px) }
+.stepper { display: flex; align-items: center; background: var(--fill); border-radius: 8px; flex: none }
+.stepper button { width: 44px; height: 32px; font-size: 22px; line-height: 1; color: var(--label) }
+.stepper button:active { opacity: .4 }
+.stepper input { width: 56px; text-align: center; border: 0; background: transparent; font-variant-numeric: tabular-nums; padding: 0; height: 32px; border-inline: .5px solid var(--sep); border-radius: 0; -moz-appearance: textfield }
+.stepper input::-webkit-inner-spin-button { -webkit-appearance: none }
+.segc { display: flex; background: var(--fill); border-radius: 9px; padding: 2px; gap: 2px }
+.segc button { flex: 1; height: 28px; border-radius: 7px; font-size: 13px; font-weight: 500; letter-spacing: -.08px }
+.segc button[aria-pressed=true] { background: var(--raised); box-shadow: 0 3px 8px rgba(0,0,0,.12), 0 3px 1px rgba(0,0,0,.04) }
+.chips { display: flex; gap: 8px; overflow-x: auto; padding: 0 max(16px, env(safe-area-inset-left, 0px)) 14px; scrollbar-width: none }
+.chips::-webkit-scrollbar { display: none }
+.chips button { flex: none; height: 32px; padding: 0 14px; border-radius: 16px; background: var(--fill); font-size: 15px; letter-spacing: -.24px }
+.chips button[aria-selected=true] { background: var(--label); color: var(--bg) }
+input.cellnum { width: 96px; text-align: right; border: 0; background: transparent; color: var(--tint); font-variant-numeric: tabular-nums; padding: 0; font-size: 17px }
+textarea { width: 100%; min-height: 140px; border: 0; background: transparent; font: 13px/1.4 var(--mono); color: var(--label); padding: 12px 16px; resize: vertical }
+
+/* part screen */
+.status { display: flex; align-items: center; gap: 10px; color: var(--label2); font-size: 15px; letter-spacing: -.24px }
+.status.err { color: var(--red) }
+.spin { width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--label3); border-top-color: var(--label2); animation: rot .8s linear infinite; flex: none }
+@keyframes rot { to { transform: rotate(360deg) } }
+.install { margin: 0 max(16px, env(safe-area-inset-left, 0px)) 24px; background: var(--cell); border-radius: 12px; padding: 14px 16px; display: flex; gap: 12px; align-items: center }
+.install img { width: 44px; height: 44px; border-radius: 10px; flex: none }
+.install p { margin: 0; font-size: 15px; line-height: 20px; letter-spacing: -.24px; color: var(--label2); flex: 1 }
+.install p b { color: var(--label); font-weight: 600 }
+.install .x { color: var(--label3); font-size: 22px; padding: 4px }
+.install .get { height: 30px; padding: 0 14px; border-radius: 15px; background: var(--tint); color: #fff; font-weight: 600; font-size: 15px }
+
+/* simulate screen */
+.stage { position: relative; margin: 8px max(16px, env(safe-area-inset-left, 0px)) 0; border-radius: 16px; overflow: hidden; background: radial-gradient(120% 90% at 50% 15%, var(--vp1), var(--vp2)); height: min(calc(100vw - 32px), 46dvh) }
+@media (min-width: 600px) { .stage { height: min(540px, 52dvh) } }
+.stage canvas { display: block; width: 100%; height: 100%; touch-action: none }
+.hud { position: absolute; left: 12px; top: 12px; right: 12px; display: flex; justify-content: space-between; gap: 8px; pointer-events: none; color: rgba(255,255,255,.75); font-size: 12px; font-variant-numeric: tabular-nums; letter-spacing: 0 }
+.hud span { background: rgba(0,0,0,.35); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); padding: 4px 9px; border-radius: 10px }
+.hud span:empty { display: none }
+.vp-msg { position: absolute; inset: 0; display: grid; place-items: center; color: rgba(255,255,255,.6); font-size: 15px; text-align: center; padding: 24px; pointer-events: none }
+.vp-msg:empty { display: none }
+.now { margin: 16px 20px 4px; min-height: 64px }
+.now .op { font-size: 20px; line-height: 25px; font-weight: 600; letter-spacing: .38px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden }
+.now .sub { font-size: 15px; line-height: 20px; letter-spacing: -.24px; color: var(--label2); margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.tl { position: relative; height: 32px; margin: 0 20px; cursor: pointer; touch-action: none }
+.tl::before { content: ""; position: absolute; left: 0; right: 0; top: 13px; height: 6px; border-radius: 3px; background: var(--fill) }
+.tl .seg { position: absolute; top: 13px; height: 6px; border-right: 1.5px solid var(--bg) }
+.tl .seg.k-cut { background: var(--orange) }
+.tl .seg.k-mill { background: var(--tint) }
+.tl .seg.k-hole { background: var(--indigo) }
+.tl .seg.k-turn { background: var(--green) }
+.tl .seg.k-setup { background: var(--label3) }
+.tl .head { position: absolute; top: 6px; width: 20px; height: 20px; margin-left: -10px; border-radius: 50%; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.3), 0 0 0 .5px rgba(0,0,0,.08); pointer-events: none }
+.times { display: flex; justify-content: space-between; margin: 0 20px; font-size: 12px; color: var(--label2); font-variant-numeric: tabular-nums; letter-spacing: 0 }
+.transport { display: flex; align-items: center; justify-content: center; gap: 40px; margin: 6px 0 16px }
+.transport .round { width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; color: var(--label) }
+.transport .round:active, .transport .play:active { opacity: .5 }
+.transport .play { width: 64px; height: 64px; border-radius: 50%; background: var(--label); color: var(--bg); display: grid; place-items: center }
+.transport svg { width: 26px; height: 26px }
+.transport .play svg { width: 28px; height: 28px }
+.speedwrap { margin: 0 max(16px, env(safe-area-inset-left, 0px)) 28px }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 0 20px 26px; font-size: 13px; color: var(--label2); letter-spacing: -.08px }
+.legend span::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; background: var(--c); vertical-align: 1px }
+
+/* quote screen */
+.hero { text-align: center; padding: 4px 20px 24px }
+.hero .route { font-size: 15px; color: var(--label2); letter-spacing: -.24px }
+.hero .price { font-size: 52px; line-height: 1.1; font-weight: 700; letter-spacing: -.5px; font-variant-numeric: tabular-nums; margin: 4px 0 2px }
+.hero .sub { font-size: 15px; color: var(--label2); letter-spacing: -.24px }
+.tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1px; background: var(--sep); border-radius: 10px; overflow: hidden }
+.tiles div { background: var(--cell); padding: 12px 12px 11px; min-width: 0 }
+.tiles small { display: block; font-size: 12px; color: var(--label2); letter-spacing: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.tiles b { display: block; font-weight: 600; font-size: 17px; font-variant-numeric: tabular-nums; margin-top: 2px; overflow-wrap: anywhere }
+.costbar { display: flex; height: 10px; border-radius: 5px; overflow: hidden; margin: 16px 16px 12px; gap: 2px }
+.costbar i { display: block; height: 100% }
+.costrows .row { min-height: 40px; padding: 9px 16px }
+.dot { width: 10px; height: 10px; border-radius: 50%; flex: none }
+.notes { margin: 0; padding: 12px 16px 12px 34px; font-size: 15px; line-height: 20px; letter-spacing: -.24px; color: var(--label2) }
+.notes li + li { margin-top: 6px }
+
+/* case study (markup produced by the shared renderCase) */
+.case { padding: 18px 16px 8px; font-size: 15px; line-height: 21px; letter-spacing: -.24px }
+.case .kicker { font-size: 13px; font-weight: 600; color: var(--tint); letter-spacing: -.08px }
+.case h2.big { font-size: 28px; line-height: 34px; font-weight: 700; letter-spacing: .36px; margin: 4px 0 6px }
+.case .lede { margin: 0 0 16px; font-size: 15px }
+.case .stat-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; padding: 14px 0; margin: 0 0 16px; border-block: .5px solid var(--sep) }
+.case .stat-row div { display: flex; flex-direction: column; min-width: 0 }
+.case .stat-row .label { font-size: 12px; color: var(--label2); letter-spacing: 0 }
+.case .stat-row b { font-size: 17px; font-weight: 600; font-variant-numeric: tabular-nums }
+.case .case-grid { display: flex; flex-direction: column; gap: 22px }
+.case section h3 { font-size: 17px; font-weight: 600; margin: 0 0 8px; letter-spacing: -.41px }
+.case ol, .case ul { padding-left: 20px; margin: 0 }
+.case li + li { margin-top: 6px }
+.case p { margin: 0 }
+.case .muted { color: var(--label2) }
+.case .hbar { display: grid; grid-template-columns: 92px minmax(0, 1fr) 72px; gap: 8px 10px; align-items: center; font-size: 13px; letter-spacing: -.08px }
+.case .hbar .trk { height: 8px; background: var(--fill); border-radius: 4px; overflow: hidden }
+.case .hbar .trk i { display: block; height: 100%; background: var(--tint); border-radius: 4px }
+.case .hbar .trk i.alt { background: var(--label3) }
+.case .hbar .v { text-align: right; font-variant-numeric: tabular-nums }
+.case .src { font-size: 12px; color: var(--label2); margin-top: 12px; line-height: 16px }
+
+/* tab bar */
+.tabbar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 20; display: grid; grid-template-columns: repeat(4, 1fr); padding: 0 env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px); background: var(--bar); -webkit-backdrop-filter: saturate(180%) blur(20px); backdrop-filter: saturate(180%) blur(20px); box-shadow: 0 -.33px 0 var(--sep) }
+.tabbar button { height: var(--tabh); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; color: #999; font-size: 10px; font-weight: 500; letter-spacing: .1px }
+.tabbar button svg { width: 26px; height: 26px }
+.tabbar button[aria-selected=true] { color: var(--tint) }
+.toast { position: fixed; left: 50%; top: calc(env(safe-area-inset-top, 0px) + 10px); transform: translate(-50%, -20px); background: var(--bar); -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px); color: var(--label); padding: 10px 18px; border-radius: 22px; font-size: 15px; font-weight: 500; box-shadow: 0 8px 30px rgba(0,0,0,.12); opacity: 0; transition: opacity .25s, transform .25s; pointer-events: none; z-index: 40; white-space: nowrap }
+.toast.on { opacity: 1; transform: translate(-50%, 0) }
+details > summary { list-style: none; cursor: pointer }
+details > summary::-webkit-details-marker { display: none }
+details[open] > summary.chev::after { transform: rotate(135deg) }
+details .inner { background: var(--bg); margin: 0 0 0 16px; border-radius: 8px; margin: 2px 12px 10px 16px }
+details .inner .row { min-height: 40px; padding: 8px 12px; font-size: 15px }
+details .inner .row + .row::before { left: 12px }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important } }
+</style>
+</head>
+<body>
+
+<!-- ============ PART ============ -->
+<section class="screen on" id="scr-part" data-title="QuickFab">
+  <div class="nav"><div class="bar"><span class="t">QuickFab</span></div></div>
+  <div class="wrap">
+    <h1 class="large">QuickFab</h1>
+    <p class="lede">Open a STEP file of a machined part. QuickFab reads the geometry, picks the cheapest process route, sizes the stock, prices it at Indian job-shop rates and animates the machining.</p>
+
+    <div class="install" id="install" hidden>
+      <img src="icons/icon-192.png" alt="">
+      <p id="installText"><b>Install QuickFab</b><br>Use it full-screen and offline.</p>
+      <button class="get" id="installBtn" hidden>Install</button>
+      <button class="x" id="installX" aria-label="Dismiss">×</button>
+    </div>
+
+    <div class="btn-row">
+      <button class="btn" id="openBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4M7 9l5-5 5 5M5 20h14"/></svg>Open STEP file</button>
+      <input type="file" id="file" hidden>
+    </div>
+
+    <div class="group">
+      <div class="list"><div class="row"><div class="status" id="status" aria-live="polite"><span class="spin"></span>Loading the STEP reader…</div></div></div>
+    </div>
+
+    <div class="group" id="bodyGroup" hidden>
+      <h4>Body in this file</h4>
+      <div class="list"><label class="row pick"><span class="k">Body</span><span class="v" id="bodyV"></span><select id="body" aria-label="Body in this file"></select></label></div>
+    </div>
+
+    <div class="group">
+      <h4>Sample parts</h4>
+      <div class="list" id="samples"></div>
+    </div>
+
+    <div class="group" id="geoGroup" hidden>
+      <h4>Geometry</h4>
+      <div class="list" id="geo"></div>
+    </div>
+
+    <div class="group" id="featGroup" hidden>
+      <h4>Detected features</h4>
+      <div class="list" id="feat"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ SIMULATE ============ -->
+<section class="screen" id="scr-sim" data-title="Simulate">
+  <div class="nav"><div class="bar"><span class="t">Simulate</span></div></div>
+  <div class="wrap">
+    <h1 class="large">Simulate</h1>
+    <div class="stage" id="stage">
+      <div class="hud"><span id="hudMc"></span><span id="hudT"></span></div>
+      <div class="vp-msg" id="vpMsg">Preparing viewport…</div>
+    </div>
+    <div class="now"><div class="op" id="hudOp">—</div><div class="sub" id="hudSub"></div></div>
+    <div class="tl" id="tl" role="slider" aria-label="Simulation timeline" tabindex="0" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="head" id="tlHead"></div></div>
+    <div class="times"><span id="tNow">0:00</span><span id="tEnd">0:00</span></div>
+    <div class="transport">
+      <button class="round" id="restart" aria-label="Restart"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12a8 8 0 1 0 2.3-5.6L4 8.7"/><path d="M4 4v4.7h4.7"/></svg></button>
+      <button class="play" id="play" aria-label="Play"></button>
+      <button class="round" id="view" aria-label="Show finished part"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2.5 3.5 7v10l8.5 4.5 8.5-4.5V7z"/><path d="m3.5 7 8.5 4.5L20.5 7M12 11.5v10"/></svg></button>
+    </div>
+    <div class="speedwrap"><div class="segc" id="speed" role="group" aria-label="Playback speed">
+      <button data-s="0.5" aria-pressed="false">0.5×</button><button data-s="1" aria-pressed="true">1×</button><button data-s="2" aria-pressed="false">2×</button><button data-s="4" aria-pressed="false">4×</button>
+    </div></div>
+    <div class="legend"><span style="--c:var(--orange)">Cutting stock</span><span style="--c:var(--tint)">Milling</span><span style="--c:var(--indigo)">Holes</span><span style="--c:var(--green)">Turning</span><span style="--c:var(--label3)">Setup</span></div>
+    <div class="group">
+      <h4>Route being simulated</h4>
+      <div class="list"><button class="row tap chev" data-go="quote"><span class="k" id="simRoute">—</span><span class="v" id="simPrice"></span></button></div>
+      <p class="foot">Pick a different route on the Quote tab to simulate it. Drag to orbit, pinch to zoom.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ QUOTE ============ -->
+<section class="screen" id="scr-quote" data-title="Quote">
+  <div class="nav"><div class="bar"><span class="t">Quote</span><button class="act" id="shareTop">Share</button></div></div>
+  <div class="wrap">
+    <h1 class="large">Quote</h1>
+    <div class="hero">
+      <div class="route" id="routeLabel">Load a part to get a quote</div>
+      <div class="price" id="price">₹—</div>
+      <div class="sub" id="priceSub">per part, excl. GST</div>
+    </div>
+
+    <div class="group"><div class="tiles" id="tiles"></div></div>
+
+    <div class="group">
+      <h4>Order</h4>
+      <div class="list">
+        <label class="row pick"><span class="k">Material</span><span class="v" id="matV"></span><select id="mat" aria-label="Material"></select></label>
+        <div class="row"><span class="k">Quantity</span><div class="stepper"><button id="qMinus" aria-label="Decrease quantity">−</button><input id="qty" type="number" inputmode="numeric" min="1" step="1" value="10" aria-label="Quantity"><button id="qPlus" aria-label="Increase quantity">+</button></div></div>
+        <label class="row pick"><span class="k">Tolerance</span><span class="v" id="tolV"></span><select id="tol" aria-label="Tolerance class"></select></label>
+        <label class="row pick"><span class="k">Surface finish</span><span class="v" id="finV"></span><select id="fin" aria-label="Surface finish"></select></label>
+        <label class="row"><span class="k">Tap holes at tap-drill sizes</span><input type="checkbox" class="switch" id="taps" checked></label>
+      </div>
+    </div>
+
+    <div class="group">
+      <h4>Routes</h4>
+      <div class="list" id="routes"></div>
+      <p class="foot">Every feasible route is costed at your quantity. Tap one to quote and simulate it.</p>
+    </div>
+
+    <div class="group">
+      <h4>Where the money goes</h4>
+      <div class="list">
+        <div class="costbar" id="costBar"></div>
+        <div class="costrows" id="costRows"></div>
+      </div>
+    </div>
+
+    <div class="group" id="notesGroup">
+      <h4>Notes</h4>
+      <div class="list"><ul class="notes" id="routeNotes"></ul></div>
+    </div>
+
+    <div class="group">
+      <h4>Operations</h4>
+      <div class="list" id="ops"></div>
+    </div>
+
+    <div class="group">
+      <h4>Breakdown</h4>
+      <div class="list" id="breakdown"></div>
+    </div>
+
+    <div class="group" id="caseGroup" hidden>
+      <h4>Case study</h4>
+      <div class="list"><article class="case" id="caseCard" hidden></article></div>
+    </div>
+
+    <div class="btn-row"><button class="btn tinted" id="shareQuote"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V3M7.5 7.5 12 3l4.5 4.5M6 11H5v10h14V11h-1"/></svg>Share quote</button></div>
+  </div>
+</section>
+
+<!-- ============ RATES ============ -->
+<section class="screen" id="scr-rates" data-title="Rates">
+  <div class="nav"><div class="bar"><span class="t">Rates</span></div></div>
+  <div class="wrap">
+    <h1 class="large">Rates</h1>
+    <p class="lede">Researched Indian market rates. Every value is editable and stays on this phone.</p>
+    <div class="chips" id="rateTabs" role="tablist">
+      <button role="tab" aria-selected="true" data-tab="materials">Materials</button>
+      <button role="tab" aria-selected="false" data-tab="machines">Machines</button>
+      <button role="tab" aria-selected="false" data-tab="cutting">Cutting</button>
+      <button role="tab" aria-selected="false" data-tab="process">Process times</button>
+      <button role="tab" aria-selected="false" data-tab="finishes">Finishes</button>
+      <button role="tab" aria-selected="false" data-tab="overheads">Overhead</button>
+    </div>
+    <div id="rateBody"></div>
+    <div class="group">
+      <div class="list">
+        <button class="row tap" id="ratesCopy"><span class="k link">Export rates as JSON</span></button>
+        <button class="row tap" id="ratesImportToggle"><span class="k link">Import rates JSON</span></button>
+        <button class="row tap" id="ratesReset"><span class="k" style="color:var(--red)">Reset to researched rates</span></button>
+      </div>
+    </div>
+    <div class="group" id="importBox" hidden>
+      <h4>Paste rates JSON</h4>
+      <div class="list"><textarea id="importText" spellcheck="false" aria-label="Rates JSON"></textarea><button class="row tap" id="importApply" style="border-top:.5px solid var(--sep)"><span class="k link">Apply rates</span></button></div>
+    </div>
+    <div class="group"><p class="foot" id="ratesSrc">Seeded 23 Oct 2026 from Indian supplier and job-work listings: aluminium 6061 bar ₹250–375/kg, SS 304 ₹150–325/kg, EN8 ₹55–130/kg, EN24 ₹85–120/kg, brass ₹430–755/kg, copper rod ₹840–1,370/kg, Ti Gr 5 ₹1,400–2,500/kg; VMC 3-axis ₹300–600/h, 4-axis ₹500–800/h, 5-axis ₹1,500–4,500/h, CNC turning ₹250–500/h; laser ₹100–500/m; wire EDM ₹0.12–0.30/mm². Finish rates are estimates; confirm with your vendors.</p></div>
+  </div>
+</section>
+
+<nav class="tabbar" role="tablist" aria-label="Sections">
+  <button role="tab" aria-selected="true" data-tab="part"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M12 2.5 3.5 7v10l8.5 4.5 8.5-4.5V7z"/><path d="m3.5 7 8.5 4.5L20.5 7M12 11.5v10"/></svg>Part</button>
+  <button role="tab" aria-selected="false" data-tab="sim"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="9.2"/><path d="M10 8.3v7.4l6-3.7z" fill="currentColor" stroke-linejoin="round"/></svg>Simulate</button>
+  <button role="tab" aria-selected="false" data-tab="quote"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 2.8h13v18.4l-3.2-2-3.3 2-3.3-2-3.2 2z"/><path d="M9 7.5h6M9 7.5c3 0 3.5 4-.2 4H9l4.5 4.5M9 9.6h6"/></svg>Quote</button>
+  <button role="tab" aria-selected="false" data-tab="rates"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M4 6.5h8M16 6.5h4M4 12h3M11 12h9M4 17.5h10M18 17.5h2"/><circle cx="14" cy="6.5" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="16" cy="17.5" r="2"/></svg>Rates</button>
+</nav>
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+window.__errs = [];
+function __showErr(m) { window.__errs.push(m); var v = document.getElementById('vpMsg'); if (v) { v.textContent = 'Viewer error: ' + m; v.style.color = '#ff9a8a'; } }
+window.addEventListener('error', function (e) { __showErr((e.message || 'script failed') + (e.filename ? ' @ ' + e.filename.split('/').pop() + ':' + e.lineno : '')); }, true);
+window.addEventListener('unhandledrejection', function (e) { __showErr(String(e.reason && e.reason.message || e.reason)); });
+setTimeout(function () { if (!window.__simReady) __showErr('3D viewer did not start (three.js module did not load).'); }, 15000);
+if ('serviceWorker' in navigator) window.addEventListener('load', function () { navigator.serviceWorker.register('sw.js').catch(function () {}); });
+</script>
+<script src="occt-import-js.js"></script>
+<script>/*ENGINE*/</script>
+<script type="importmap">{"imports":{"three":"./vendor/three.module.min.js","three/addons/":"./vendor/"}}</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/OrbitControls.js';
+import { RoomEnvironment } from 'three/addons/RoomEnvironment.js';
+
+const $ = s => document.querySelector(s);
+const $$ = s => document.querySelectorAll(s);
+const fmt = (v, d = 0) => (isFinite(v) ? v : 0).toLocaleString('en-IN', { minimumFractionDigits: d, maximumFractionDigits: d });
+const rs = (v, d = 0) => '₹' + fmt(v, d);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+function toast(msg) { const t = $('#toast'); t.textContent = msg; t.classList.add('on'); clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove('on'), 2000); }
+const ICON_PLAY = '<svg viewBox="0 0 24 24"><path d="M8 5.2v13.6c0 .8.9 1.3 1.6.9l10.4-6.8a1 1 0 0 0 0-1.8L9.6 4.3C8.9 3.9 8 4.4 8 5.2z" fill="currentColor"/></svg>';
+const ICON_PAUSE = '<svg viewBox="0 0 24 24"><rect x="6" y="4.5" width="4" height="15" rx="1.2" fill="currentColor"/><rect x="14" y="4.5" width="4" height="15" rx="1.2" fill="currentColor"/></svg>';
+
+// ---------------- rates (kept on this device) ----------------
+const RKEY = 'quickfab-mobile-rates';
+const clone = o => JSON.parse(JSON.stringify(o));
+let RATES = clone(MFG.DEFAULT_RATES);
+try { const s = localStorage.getItem(RKEY); if (s) { const r = JSON.parse(s); if (r && r.materials && r.machines) RATES = Object.assign(clone(MFG.DEFAULT_RATES), r); } } catch (e) {}
+function saveRates() { try { localStorage.setItem(RKEY, JSON.stringify(RATES)); } catch (e) {} }
+
+const state = { occt: null, bodies: [], bodyIdx: 0, S: null, T: null, plan: null, routeId: null, name: '', caseStudy: false };
+
+// ---------------- tabs + large-title navigation ----------------
+let curTab = 'part';
+function go(tab) {
+  curTab = tab;
+  $$('.tabbar button').forEach(b => b.setAttribute('aria-selected', b.dataset.tab === tab));
+  $$('.screen').forEach(s => s.classList.toggle('on', s.id === 'scr-' + tab));
+  window.scrollTo(0, 0); updateNav();
+  if (sim && sim.setActive) sim.setActive(tab === 'sim');
+}
+$$('.tabbar button').forEach(b => b.addEventListener('click', () => go(b.dataset.tab)));
+$$('[data-go]').forEach(b => b.addEventListener('click', () => go(b.dataset.go)));
+function updateNav() { const s = $('.screen.on'); if (!s) return; const nav = s.querySelector('.nav'), h = s.querySelector('h1.large'); nav.classList.toggle('stuck', h.getBoundingClientRect().bottom < nav.getBoundingClientRect().bottom); }
+window.addEventListener('scroll', updateNav, { passive: true });
+
+// ---------------- order controls ----------------
+function syncPick(sel, out) { const o = sel.options[sel.selectedIndex]; $(out).textContent = o ? (o.dataset.short || o.textContent) : ''; }
+function fillSelects() {
+  const mat = $('#mat'), cur = mat.value;
+  const groups = {}; RATES.materials.forEach(m => (groups[m.group] = groups[m.group] || []).push(m));
+  mat.innerHTML = Object.entries(groups).map(([g, ms]) => `<optgroup label="${esc(g)}">${ms.map(m => `<option value="${m.id}" data-short="${esc(m.name.split(/[(]/)[0].trim())}">${esc(m.name)} — ₹${fmt(m.bar)}/kg</option>`).join('')}</optgroup>`).join('');
+  mat.value = cur && RATES.materials.some(m => m.id === cur) ? cur : 'al6061';
+  const tol = $('#tol'), tcur = tol.value;
+  tol.innerHTML = Object.entries(MFG.TOL).map(([k, t]) => `<option value="${k}">${esc(t.name)}</option>`).join('');
+  if (tcur) tol.value = tcur;
+  const fin = $('#fin'), fcur = fin.value;
+  fin.innerHTML = RATES.finishes.map(f => `<option value="${f.id}">${esc(f.name)}</option>`).join('');
+  fin.value = fcur && RATES.finishes.some(f => f.id === fcur) ? fcur : 'none';
+  syncAll();
+}
+function syncAll() { syncPick($('#mat'), '#matV'); syncPick($('#tol'), '#tolV'); syncPick($('#fin'), '#finV'); }
+fillSelects();
+['#mat', '#tol', '#fin', '#taps'].forEach(s => $(s).addEventListener('change', () => { syncAll(); replan(true); }));
+$('#qty').addEventListener('change', () => { $('#qty').value = Math.max(1, Math.round(+$('#qty').value || 1)); replan(true); });
+const stepQ = d => { const v = Math.max(1, Math.round(+$('#qty').value || 1)); const steps = [1, 2, 5, 10, 25, 50, 100, 250, 500, 1000]; let n; if (d > 0) n = steps.find(s => s > v) || v + 500; else n = [...steps].reverse().find(s => s < v) || 1; $('#qty').value = n; replan(true); };
+$('#qMinus').addEventListener('click', () => stepQ(-1));
+$('#qPlus').addEventListener('click', () => stepQ(1));
+
+function setStatus(msg, err, busy) { const s = $('#status'); s.innerHTML = (busy ? '<span class="spin"></span>' : '') + esc(msg); s.classList.toggle('err', !!err); }
+
+// ---------------- STEP loading ----------------
+async function getOcct() {
+  if (state.occt) return state.occt;
+  if (typeof occtimportjs !== 'function') throw new Error('The STEP reader did not load. Reload the app and try again.');
+  state.occt = await occtimportjs({ locateFile: f => f });
+  return state.occt;
+}
+const SAMPLES = {
+  slider: { file: 'slider-block-pa6.step', body: null, label: 'Slider block', sub: 'Case study · cast nylon, 10 pcs', mat: 'pa6', qty: 10, caseStudy: true, c: 'var(--tint)' },
+  plate: { file: 'as1-oc-214.stp', body: 'plate', label: 'Mounting plate', sub: 'CAx-IF AS1 · prismatic', c: 'var(--indigo)' },
+  bracket: { file: 'as1-oc-214.stp', body: 'l-bracket', label: 'L-bracket', sub: 'CAx-IF AS1 · prismatic', c: 'var(--indigo)' },
+  shaft: { file: 'sg1-c5-214.stp', body: null, label: 'Flanged sleeve', sub: 'CAx-IF SG1 · turned', c: 'var(--green)' },
+  bolt: { file: 'as1-oc-214.stp', body: 'bolt', label: 'Bolt', sub: 'CAx-IF AS1 · turned', c: 'var(--green)' },
+  rod: { file: 'as1-oc-214.stp', body: 'rod', label: 'Rod', sub: 'CAx-IF AS1 · turned', c: 'var(--green)' }
+};
+$('#samples').innerHTML = Object.entries(SAMPLES).map(([k, s]) => `<button class="row tap chev" data-sample="${k}"><span class="ic" style="background:${s.c}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 2.5 3.5 7v10l8.5 4.5 8.5-4.5V7z"/><path d="m3.5 7 8.5 4.5L20.5 7M12 11.5v10"/></svg></span><span class="k">${esc(s.label)}<small>${esc(s.sub)}</small></span></button>`).join('');
+$$('[data-sample]').forEach(b => b.addEventListener('click', () => loadSample(b.dataset.sample)));
+const fileCache = {};
+async function loadSample(key) {
+  const s = SAMPLES[key];
+  setStatus('Reading ' + s.label + '…', false, true);
+  try {
+    if (!fileCache[s.file]) { const res = await fetch(s.file); if (!res.ok) throw new Error('Sample file missing'); fileCache[s.file] = new Uint8Array(await res.arrayBuffer()); }
+    if (s.mat) { $('#mat').value = s.mat; $('#qty').value = s.qty; syncAll(); }
+    state.caseStudy = !!s.caseStudy;
+    await loadStep(fileCache[s.file], s.label, s.body);
+  } catch (e) { setStatus(e.message, true); }
+}
+async function loadStep(bytes, name, preferBody) {
+  const occt = await getOcct();
+  setStatus('Tessellating ' + name + '…', false, true);
+  await new Promise(r => setTimeout(r, 30));
+  let res;
+  try { res = occt.ReadStepFile(bytes, { linearUnit: 'millimeter', linearDeflectionType: 'bounding_box_ratio', linearDeflection: 0.0015, angularDeflection: 0.25 }); }
+  catch (e) { throw new Error('This file could not be read as STEP. Export it again as STEP AP203 or AP214.'); }
+  if (!res || !res.success || !res.meshes || !res.meshes.length) throw new Error('No solid bodies found in this file. Check that it contains a 3D solid, not only curves or surfaces.');
+  const bodies = []; const seen = new Set();
+  res.meshes.forEach((m, i) => {
+    const p = m.attributes.position.array; let mn = [1e18, 1e18, 1e18], mx = [-1e18, -1e18, -1e18];
+    for (let k = 0; k < p.length; k += 3) for (let a = 0; a < 3; a++) { mn[a] = Math.min(mn[a], p[k + a]); mx[a] = Math.max(mx[a], p[k + a]); }
+    const sz = mx.map((v, a) => v - mn[a]); const key = (m.name || '') + sz.map(v => v.toFixed(1)).sort().join('x') + m.index.array.length;
+    if (seen.has(key)) return; seen.add(key);
+    bodies.push({ m, name: m.name || ('Body ' + (i + 1)), sz, box: sz[0] * sz[1] * sz[2] });
+  });
+  state.bodies = bodies; state.name = name;
+  let idx = 0;
+  if (preferBody) { const j = bodies.findIndex(b => b.name.toLowerCase() === preferBody); if (j >= 0) idx = j; }
+  else bodies.forEach((b, i) => { if (b.box > bodies[idx].box) idx = i; });
+  $('#bodyGroup').hidden = bodies.length < 2;
+  const sel = $('#body');
+  sel.innerHTML = bodies.map((b, i) => `<option value="${i}" data-short="${esc(b.name)}">${esc(b.name)} — ${b.sz.map(v => v.toFixed(0)).join(' × ')} mm</option>`).join('');
+  sel.value = String(idx); syncPick(sel, '#bodyV');
+  analyseBody(idx);
+}
+$('#body').addEventListener('change', e => { syncPick(e.target, '#bodyV'); analyseBody(+e.target.value); });
+
+function analyseBody(idx) {
+  state.bodyIdx = idx;
+  const b = state.bodies[idx];
+  setStatus('Analysing geometry…', false, true);
+  setTimeout(() => {
+    try {
+      const t0 = performance.now();
+      const T = MFG.prepareMeshes([b.m]);
+      const S = MFG.study(T);
+      state.T = T; state.S = S; state.routeId = null;
+      sim.setPart(T, S);
+      renderGeo();
+      replan(true);
+      const kind = S.turned ? 'rotational' : 'prismatic';
+      setStatus(`${state.name}${state.bodies.length > 1 ? ' · ' + b.name : ''} — ${S.features.faces} faces, ${kind}, analysed in ${(Math.round(performance.now() - t0) / 1000).toFixed(1)} s`);
+    } catch (e) { console.error(e); setStatus('Analysis failed: ' + e.message, true); }
+  }, 40);
+}
+
+// open a file: picker (no accept filter, so iOS Files lets .step through)
+const fileIn = $('#file');
+$('#openBtn').addEventListener('click', () => fileIn.click());
+fileIn.addEventListener('change', () => { if (fileIn.files[0]) readFile(fileIn.files[0]); fileIn.value = ''; });
+async function readFile(f) {
+  if (!/\.(step|stp)$/i.test(f.name)) { setStatus('That is not a STEP file. Pick a .step or .stp export of the part.', true); return; }
+  try { const buf = new Uint8Array(await f.arrayBuffer()); state.caseStudy = false; await loadStep(buf, f.name, null); } catch (e) { setStatus(e.message, true); }
+}
+// files opened from the OS (desktop file handler) and Android share sheet
+if ('launchQueue' in window) launchQueue.setConsumer(async p => { if (p.files && p.files[0]) { const f = await p.files[0].getFile(); bootDone.then(() => readFile(f)); } });
+async function takeShared() {
+  if (!/[?&]shared=1/.test(location.search) || !('caches' in window)) return false;
+  try {
+    const c = await caches.open('quickfab-share'); const r = await c.match('shared-file'); if (!r) return false;
+    const name = decodeURIComponent(r.headers.get('x-name') || 'shared.step'); const buf = new Uint8Array(await r.arrayBuffer()); await c.delete('shared-file');
+    history.replaceState(null, '', location.pathname);
+    state.caseStudy = false; await loadStep(buf, name, null); return true;
+  } catch (e) { setStatus(e.message, true); return true; }
+}
+
+// ---------------- planning ----------------
+function opts() { return { tol: $('#tol').value, finish: $('#fin').value, noTap: !$('#taps').checked }; }
+function replan(resim) {
+  if (!state.S) return;
+  const q = Math.max(1, Math.round(+$('#qty').value || 1));
+  const P = MFG.plan(state.S, $('#mat').value, q, RATES, opts());
+  state.plan = P;
+  if (!state.routeId || !P.routes.some(r => r.id === state.routeId)) state.routeId = P.best.id;
+  renderPlan();
+  renderCase(); $('#caseGroup').hidden = $('#caseCard').hidden;
+  if (resim) sim.setRoute(currentRoute(), state.S, P.mat);
+}
+function currentRoute() { return state.plan.routes.find(r => r.id === state.routeId) || state.plan.best; }
+const MC_NAME = k => ({ saw: 'Bandsaw', laser: 'Fibre laser', waterjet: 'Waterjet', wedm: 'Wire EDM' }[k] || (RATES.machines[k] ? RATES.machines[k].name : k));
+const COST = [['Material', 'var(--tint)'], ['Stock cutting', 'var(--orange)'], ['Machining', 'var(--indigo)'], ['Setup + CAM', 'var(--label3)'], ['Deburr, inspect, finish', 'var(--green)'], ['Overhead + margin', 'color-mix(in srgb, var(--label) 45%, transparent)']];
+
+function renderPlan() {
+  const P = state.plan, r = currentRoute(), c = r.cost, S = state.S;
+  $('#routeLabel').textContent = (r === P.best ? 'Lowest-cost route · ' : 'Selected route · ') + r.name;
+  $('#price').textContent = rs(c.perPart);
+  $('#priceSub').textContent = `per part, excl. GST · ${rs(c.perPartGst)} incl. ${RATES.overheads.gstPct}% GST`;
+  $('#simRoute').textContent = r.name; $('#simPrice').textContent = rs(c.perPart);
+  $('#tiles').innerHTML = [
+    ['Batch of ' + fmt(P.q), rs(c.batchGst)], ['Cycle time', fmt(c.cycleMin, 1) + ' min'], ['Setups', String(r.setups.length)],
+    ['Stock', r.stock.desc.replace(/^(Plate cut to|Bar|Block) /i, '')], ['Stock mass', fmt(c.stockMass, 2) + ' kg'], ['Material used', fmt(c.utilisation * 100, 0) + '%']
+  ].map(([k, v]) => `<div><small>${esc(k)}</small><b>${esc(v)}</b></div>`).join('');
+  const parts = [c.material, c.cutting, c.machining + c.load, c.setupPer, c.deburr + c.treat, c.overhead + c.margin];
+  const tot = parts.reduce((s, v) => s + v, 0) || 1;
+  $('#costBar').innerHTML = parts.map((v, i) => v > 0 ? `<i style="flex:${v / tot};background:${COST[i][1]}"></i>` : '').join('');
+  $('#costRows').innerHTML = parts.map((v, i) => `<div class="row"><span class="dot" style="background:${COST[i][1]}"></span><span class="k">${COST[i][0]}</span><span class="v">${rs(v)} · ${fmt(v / tot * 100, 0)}%</span></div>`).join('');
+  const notes = [...r.notes];
+  if (S.features.holes.some(h => h.tap) && $('#taps').checked) notes.push('Holes at standard tap-drill diameters are quoted as tapped. Turn off "Tap holes" if they are plain clearance holes.');
+  if (P.tol.finish > 1.3) notes.push('Tight tolerance adds slower finishing passes, reaming and extra inspection.');
+  $('#notesGroup').hidden = !notes.length;
+  $('#routeNotes').innerHTML = notes.map(n => `<li>${esc(n)}</li>`).join('');
+  // routes
+  $('#routes').innerHTML = P.routes.map(x => `<button class="row tap" data-id="${x.id}"><span class="check">${x.id === r.id ? '✓' : ''}</span><span class="k">${esc(x.name)}${x === P.best ? '<span class="badge">Lowest</span>' : ''}<small>${x.setups.length} setup${x.setups.length === 1 ? '' : 's'} · ${fmt(x.cost.cycleMin, 1)} min cycle</small></span><span class="v strong">${rs(x.cost.perPart)}</span></button>`).join('');
+  $$('#routes [data-id]').forEach(b => b.addEventListener('click', () => { state.routeId = b.dataset.id; renderPlan(); sim.setRoute(currentRoute(), state.S, state.plan.mat); toast('Route selected'); }));
+  // operations
+  let html = '', lastSetup = null;
+  for (const o of r.ops) {
+    const sl = o.setupLabel || 'Stock preparation';
+    if (sl !== lastSetup) { html += `<div class="row sub">${esc(sl)}</div>`; lastSetup = sl; }
+    const t = o.min != null && o.kind !== 'laser' && o.kind !== 'edm' ? fmt(o.min, 2) + ' min · ' : '';
+    html += `<div class="row"><span class="k">${esc(o.label)}<small>${esc(MC_NAME(o.machine))}</small></span><span class="v">${t}${rs(o.cost || 0)}</span></div>`;
+  }
+  html += `<div class="row sub">Per part, all setups</div>`;
+  html += `<div class="row"><span class="k">Load / unload</span><span class="v">${rs(c.load)}</span></div>`;
+  html += `<div class="row"><span class="k">Setup + CAM programming<small>${rs(c.setupBatch)} per batch ÷ ${fmt(P.q)}</small></span><span class="v">${rs(c.setupPer)}</span></div>`;
+  html += `<div class="row"><span class="k">Deburr &amp; inspect${c.treat ? ', ' + esc(P.fin.name) : ''}</span><span class="v">${rs(c.deburr + c.treat)}</span></div>`;
+  $('#ops').innerHTML = html;
+  // breakdown
+  const rows = [['Stock material', `${fmt(c.stockMass, 3)} kg × ₹${fmt(c.price)}/kg + 5% offcut`, c.material], ['Stock / profile cutting', '', c.cutting], ['Machine time', `${fmt(c.cycleMin, 1)} min`, c.machining], ['Load / unload', '', c.load], ['Setup + programming', `amortised ÷ ${fmt(P.q)}`, c.setupPer], ['Deburr & inspection', '', c.deburr], ['Surface finish', P.fin.name, c.treat], ['Overhead', `${RATES.overheads.overheadPct}% of conversion`, c.overhead], ['Margin', `${RATES.overheads.marginPct}%`, c.margin]];
+  $('#breakdown').innerHTML = rows.map(([a, b, v]) => `<div class="row"><span class="k">${esc(a)}${b ? `<small>${esc(b)}</small>` : ''}</span><span class="v">${rs(v)}</span></div>`).join('') +
+    `<div class="row"><span class="k"><b>Price per part</b><small>excl. GST</small></span><span class="v strong"><b>${rs(c.perPart)}</b></span></div><div class="row"><span class="k">GST ${RATES.overheads.gstPct}%</span><span class="v">${rs(c.gst)}</span></div><div class="row"><span class="k"><b>Batch of ${fmt(P.q)}</b><small>incl. GST</small></span><span class="v strong"><b>${rs(c.batchGst)}</b></span></div>`;
+}
+
+function renderGeo() {
+  const S = state.S, A = S.A, f = S.features, sz = A.bbox.size;
+  $('#geoGroup').hidden = false; $('#featGroup').hidden = false;
+  $('#geo').innerHTML = [
+    ['Envelope', sz.map(v => v.toFixed(1)).join(' × ') + ' mm'], ['Volume', fmt(A.volume / 1000, 2) + ' cm³'], ['Surface area', fmt(A.area / 100, 1) + ' cm²'],
+    ['Faces', `${f.faces} · ${f.planar} flat, ${f.cyl} cyl, ${f.cone} cone, ${f.free} free`], ['Part type', S.turned ? 'Rotational' : 'Prismatic'],
+    ['Holes', String(f.holes.length)], ['Min. inside radius', f.minCornerR ? 'R' + f.minCornerR.toFixed(2) : '—']
+  ].map(([k, v]) => `<div class="row"><span class="k">${k}</span><span class="v">${esc(v)}</span></div>`).join('');
+  let rows = '';
+  const R = (k, small, v) => rows += `<div class="row"><span class="k">${esc(k)}${small ? `<small>${esc(small)}</small>` : ''}</span><span class="v">${esc(v)}</span></div>`;
+  f.holes.forEach(h => R(h.cbore ? 'Counterbored hole' : h.interrupted ? 'Coaxial hole pair' : 'Hole',
+    `${h.through ? 'Through' : 'Blind'} · ${h.interrupted ? h.cutDepth.toFixed(1) + ' mm in ' + h.segs + ' walls' : h.depth.toFixed(1) + ' mm deep'}${h.depth / h.d > 5 ? ' · ' + (h.depth / h.d).toFixed(1) + '×D' : ''}${h.tap ? ' · tap-drill for ' + h.tap : ''}`,
+    'Ø' + h.d.toFixed(2) + (h.cbore ? ' / Ø' + h.dMax.toFixed(1) : '')));
+  if (S.turned) { const T = S.turned; R('Turned envelope', `${T.steps} diameter step(s)${T.hasBore ? (T.throughBore ? ' · through bore' : ' · blind bore') : ''}`, `Ø${(T.rMax * 2).toFixed(2)} × ${T.L.toFixed(1)}`); }
+  if (f.slots) R('Slot ends', 'Half-round internal faces', String(f.slots));
+  if (f.minCornerR) R('Internal corner', 'Sets the smallest cutter', 'R' + f.minCornerR.toFixed(2));
+  if (f.freeFrac > 0.02) R('Free-form surface', 'Fillets / blends, 3D finishing', (f.freeFrac * 100).toFixed(0) + '%');
+  const P = S.prismatic; R('Machining directions', P.setups.map(s => s.dir).join(', '), String(P.setups.length));
+  $('#feat').innerHTML = rows;
+}
+
+/*CASE*/
+
+function quoteText() {
+  const P = state.plan, r = currentRoute(), c = r.cost;
+  const lines = [`QuickFab quote — ${state.name}${state.bodies.length > 1 ? ' / ' + state.bodies[state.bodyIdx].name : ''}`, `Material: ${P.mat.name} · Qty ${P.q} · ${P.tol.name} · ${P.fin.name}`, `Route: ${r.name}`, `Stock: ${r.stock.desc} (${fmt(c.stockMass, 3)} kg)`, '', 'Operations:'];
+  r.ops.forEach(o => lines.push(`  - ${o.label} [${MC_NAME(o.machine)}]${o.min && o.kind !== 'laser' && o.kind !== 'edm' ? ' ' + fmt(o.min, 2) + ' min' : ''} — ${rs(o.cost || 0)}`));
+  lines.push('', `Material ${rs(c.material)} · Cutting ${rs(c.cutting)} · Machining ${rs(c.machining + c.load)} · Setup/part ${rs(c.setupPer)} · Deburr/finish ${rs(c.deburr + c.treat)} · Overhead+margin ${rs(c.overhead + c.margin)}`, `Price per part: ${rs(c.perPart)} + GST ${rs(c.gst)} = ${rs(c.perPartGst)}`, `Batch total incl. GST: ${rs(c.batchGst)}`, `Cycle time ${fmt(c.cycleMin, 1)} min/part`);
+  return lines.join('\n');
+}
+async function shareText(title, txt, ok) {
+  if (navigator.share) { try { await navigator.share({ title, text: txt }); return; } catch (e) { if (e && e.name === 'AbortError') return; } }
+  try { await navigator.clipboard.writeText(txt); toast(ok); }
+  catch (e) { go('rates'); $('#importBox').hidden = false; const ta = $('#importText'); ta.value = txt; ta.focus(); ta.select(); toast('Copy the selected text'); }
+}
+const shareQuote = () => { if (state.plan) shareText('QuickFab quote', quoteText(), 'Quote copied'); };
+$('#shareQuote').addEventListener('click', shareQuote);
+$('#shareTop').addEventListener('click', shareQuote);
+
+// ---------------- rates editor ----------------
+let rateTab = 'materials';
+$$('#rateTabs button').forEach(b => b.addEventListener('click', () => { rateTab = b.dataset.tab; $$('#rateTabs button').forEach(x => x.setAttribute('aria-selected', x === b)); renderRates(); }));
+const numIn = (path, v) => `<input class="cellnum" type="number" inputmode="decimal" step="any" data-path="${path}" value="${v}" aria-label="${esc(path)}">`;
+const PROC_LABEL = { millMRR: ['Milling roughing rate', 'cm³/min in Al'], millFinish: ['Milling finishing rate', 'cm²/min in Al'], turnMRR: ['Turning roughing rate', 'cm³/min in Al'], turnFinish: ['Turning finishing rate', 'cm²/min in Al'], drillFeed: ['Drill feed', 'mm/min in Al'], tapPerHole: ['Tapping', 'min/hole'], reamPerHole: ['Reaming', 'min/hole'], toolChange: ['Tool change', 'min'], loadVmc: ['Load/unload VMC', 'min/setup'], loadLathe: ['Load/unload lathe', 'min/setup'], setupVmc: ['VMC setup', 'min/setup/batch'], setupLathe: ['Lathe setup', 'min/setup/batch'], setupEdm: ['Wire EDM setup', 'min/batch'], setupLaser: ['Laser/waterjet setup', 'min/batch'], programPerSetup: ['CAM programming', 'min/setup/batch'], deburrBase: ['Deburr + inspect', 'min/part'], deburrPerFeature: ['Per feature', 'min'], freeformFactor: ['3D surface slow-down', '×'], partOffMin: ['Part-off (Ø25)', 'min'] };
+const CUT_LABEL = { sawPerCut: ['Bandsaw', '₹ per cut'], sawPerCm2: ['Bandsaw area', '₹/cm² of section'], laserBasePerM: ['Laser base', '₹/m (MS)'], laserPerMmPerM: ['Laser per mm thickness', '₹/m per mm'], laserPierce: ['Pierce', '₹ each'], waterjetBasePerM: ['Waterjet base', '₹/m'], waterjetPerMmPerM: ['Waterjet per mm', '₹/m per mm'], wireEdmPerMm2: ['Wire EDM', '₹/mm² of cut face'], wireEdmStart: ['Wire threading', '₹ per start'] };
+const cell = (k, small, path, v) => `<label class="row"><span class="k">${esc(k)}${small ? `<small>${esc(small)}</small>` : ''}</span>${numIn(path, v)}</label>`;
+function renderRates() {
+  let h = '';
+  if (rateTab === 'materials') {
+    const groups = {}; RATES.materials.forEach((m, i) => (groups[m.group] = groups[m.group] || []).push([m, i]));
+    h = Object.entries(groups).map(([g, ms]) => `<div class="group"><h4>${esc(g)}</h4><div class="list">` + ms.map(([m, i]) => `<details><summary class="row tap chev"><span class="k">${esc(m.name)}</span><span class="v">₹${fmt(m.bar)}/kg</span></summary><div class="inner">${cell('Bar', '₹/kg', `materials.${i}.bar`, m.bar)}${cell('Plate', '₹/kg', `materials.${i}.plate`, m.plate)}${cell('Density', 'g/cm³', `materials.${i}.density`, m.density)}${cell('Time factor', '× aluminium 6061', `materials.${i}.mi`, m.mi)}${cell('Cut factor', '× laser / waterjet ₹/m', `materials.${i}.cutF`, m.cutF)}${cell('Laser max', 'mm thickness', `materials.${i}.laserMax`, m.laserMax)}</div></details>`).join('') + '</div></div>').join('');
+  } else if (rateTab === 'machines') {
+    h = `<div class="group"><h4>Machine hour rates, ₹/h</h4><div class="list">` + Object.entries(RATES.machines).map(([k, m]) => cell(m.name, '', `machines.${k}.rate`, m.rate)).join('') + '</div></div>';
+  } else if (rateTab === 'cutting') {
+    h = `<div class="group"><h4>Stock and profile cutting</h4><div class="list">` + Object.entries(RATES.cutting).map(([k, v]) => cell((CUT_LABEL[k] || [k])[0], (CUT_LABEL[k] || [, ''])[1], `cutting.${k}`, v)).join('') + '</div></div>';
+  } else if (rateTab === 'process') {
+    h = `<div class="group"><h4>Process times and rates</h4><div class="list">` + Object.entries(RATES.process).map(([k, v]) => cell((PROC_LABEL[k] || [k])[0], (PROC_LABEL[k] || [, ''])[1], `process.${k}`, v)).join('') + '</div></div>';
+  } else if (rateTab === 'finishes') {
+    h = RATES.finishes.map((f, i) => i === 0 ? '' : `<div class="group"><h4>${esc(f.name)}</h4><div class="list">${cell('Per area', '₹/dm²', `finishes.${i}.perDm2`, f.perDm2)}${cell('Per weight', '₹/kg', `finishes.${i}.perKg`, f.perKg)}${cell('Lot minimum', '₹', `finishes.${i}.min`, f.min)}</div></div>`).join('');
+  } else {
+    h = `<div class="group"><h4>Overhead and margin</h4><div class="list">${cell('Overhead on conversion cost', '%', 'overheads.overheadPct', RATES.overheads.overheadPct)}${cell('Margin', '%', 'overheads.marginPct', RATES.overheads.marginPct)}${cell('GST', '%', 'overheads.gstPct', RATES.overheads.gstPct)}</div></div>`;
+  }
+  $('#rateBody').innerHTML = h;
+  $$('#rateBody input[data-path]').forEach(inp => inp.addEventListener('change', () => {
+    const v = parseFloat(inp.value); if (!isFinite(v) || v < 0) { inp.value = getPath(inp.dataset.path); return; }
+    setPath(inp.dataset.path, v); saveRates();
+    if (inp.dataset.path.startsWith('materials')) { fillSelects(); const s = inp.closest('details').querySelector('summary .v'); if (s && inp.dataset.path.endsWith('.bar')) s.textContent = '₹' + fmt(v) + '/kg'; }
+    replan(false); toast('Rate updated');
+  }));
+}
+function getPath(p) { return p.split('.').reduce((o, k) => o[k], RATES); }
+function setPath(p, v) { const ks = p.split('.'); const last = ks.pop(); ks.reduce((o, k) => o[k], RATES)[last] = v; }
+renderRates();
+$('#ratesReset').addEventListener('click', () => { if (!confirm('Reset every rate to the researched values?')) return; RATES = clone(MFG.DEFAULT_RATES); saveRates(); fillSelects(); renderRates(); replan(true); toast('Rates reset'); });
+$('#ratesCopy').addEventListener('click', () => shareText('QuickFab rates', JSON.stringify(RATES, null, 1), 'Rates copied'));
+$('#ratesImportToggle').addEventListener('click', () => { $('#importBox').hidden = !$('#importBox').hidden; });
+$('#importApply').addEventListener('click', () => {
+  try { const r = JSON.parse($('#importText').value); if (!r.materials || !r.machines || !r.process) throw 0; RATES = Object.assign(clone(MFG.DEFAULT_RATES), r); saveRates(); fillSelects(); renderRates(); replan(true); toast('Rates imported'); $('#importBox').hidden = true; }
+  catch (e) { toast('That is not a QuickFab rates JSON'); }
+});
+
+// =====================================================================
+// SIMULATION (shared with the web version, inlined at build time)
+// =====================================================================
+/*SIM*/
+
+// phone-specific behaviour on top of the shared simulator
+const mmss = s => { s = Math.max(0, s); return Math.floor(s / 60) + ':' + String(Math.floor(s % 60)).padStart(2, '0'); };
+class PhoneSim extends Sim {
+  constructor(el) { super(el); this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2)); this.active = false; }
+  setActive(on) { this.active = on; if (on) { this.resize(); this.clock.getDelta(); if (this._autoplay) { this._autoplay = false; this.setPlaying(true); } } else if (this.playing) { this.setPlaying(false); this._autoplay = this.t < this.total; } }
+  tick() { if (!this.active || document.hidden) { this.clock.getDelta(); return; } super.tick(); }
+  setPlaying(p) { this.playing = p; const b = $('#play'); b.innerHTML = p ? ICON_PAUSE : ICON_PLAY; b.setAttribute('aria-label', p ? 'Pause' : 'Play'); }
+  advanceTo(t) { super.advanceTo(t); $('#tNow').textContent = mmss(t); $('#tEnd').textContent = mmss(this.total); }
+  setRoute(route, S, mat) { const v = $('#view'), icon = v.innerHTML; super.setRoute(route, S, mat); v.innerHTML = icon; if (!this.active) { this.setPlaying(false); this._autoplay = true; } }
+}
+let sim;
+try { sim = new PhoneSim($('#stage')); window.__simReady = true; window.__sim = sim; $('#vpMsg').textContent = 'Load a part to start'; sim.setPlaying(false); }
+catch (e) { console.error(e); window.__simReady = true; $('#vpMsg').textContent = 'WebGL is not available, so the simulation is off. Quoting still works.'; sim = { setPart() {}, setRoute() {}, seek() {}, setPlaying() {}, setActive() {}, total: 0 }; }
+
+$('#play').addEventListener('click', () => { if (!sim.total) return; if (sim.t >= sim.total) sim.seek(0); sim.setPlaying(!sim.playing); });
+$('#restart').addEventListener('click', () => { if (!sim.total) return; sim.seek(0); sim.setPlaying(true); });
+const tl = $('#tl');
+const tlSeek = e => { const r = tl.getBoundingClientRect(); const u = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)); sim.seek(u * sim.total); };
+let drag = false;
+tl.addEventListener('pointerdown', e => { if (!sim.total) return; drag = true; tl.setPointerCapture(e.pointerId); sim.setPlaying(false); tlSeek(e); });
+tl.addEventListener('pointermove', e => { if (drag) tlSeek(e); });
+tl.addEventListener('pointerup', () => drag = false);
+tl.addEventListener('pointercancel', () => drag = false);
+tl.addEventListener('keydown', e => { if (e.key === 'ArrowRight') sim.seek(sim.t + 1); if (e.key === 'ArrowLeft') sim.seek(sim.t - 1); });
+$$('#speed button').forEach(b => b.addEventListener('click', () => { sim.speed = +b.dataset.s; $$('#speed button').forEach(x => x.setAttribute('aria-pressed', x === b)); }));
+$('#view').addEventListener('click', () => { if (!sim.total) return; sim.setPlaying(false); sim.seek(sim.total); });
+document.addEventListener('visibilitychange', () => { if (document.hidden && sim.playing) sim.setPlaying(false); });
+
+// ---------------- install prompt ----------------
+const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+let dismissed = false; try { dismissed = localStorage.getItem('quickfab-install-x') === '1'; } catch (e) {}
+const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+let deferred = null;
+if (!standalone && !dismissed && isIOS) { $('#install').hidden = false; $('#installText').innerHTML = '<b>Install QuickFab</b><br>Tap Share, then <b>Add to Home Screen</b>.'; }
+window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferred = e; if (!standalone && !dismissed) { $('#install').hidden = false; $('#installBtn').hidden = false; } });
+$('#installBtn').addEventListener('click', async () => { if (!deferred) return; deferred.prompt(); await deferred.userChoice; deferred = null; $('#install').hidden = true; });
+$('#installX').addEventListener('click', () => { $('#install').hidden = true; try { localStorage.setItem('quickfab-install-x', '1'); } catch (e) {} });
+window.addEventListener('appinstalled', () => { $('#install').hidden = true; });
+
+// ---------------- boot ----------------
+let bootResolve; const bootDone = new Promise(r => bootResolve = r);
+(async () => {
+  try {
+    await getOcct(); setStatus('STEP reader ready.');
+    if (!(await takeShared())) await loadSample('slider');
+  } catch (e) { setStatus(e.message || 'The STEP reader failed to start.', true); }
+  bootResolve();
+})();
+</script>
+</body>
+</html>

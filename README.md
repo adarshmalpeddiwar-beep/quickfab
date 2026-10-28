@@ -12,6 +12,22 @@ Upload a STEP file of a machined part and get, in the browser:
 
 Case study: `web/slider-block-pa6.step`, a cast-nylon linear slider block, loads by default.
 
+There are two apps with the same features:
+
+| | Folder | Live (GitHub Pages) |
+|---|---|---|
+| **Web** (desktop layout) | `web/` | `https://adarshmalpeddiwar-beep.github.io/quickfab/web/` |
+| **Phone app** (installable PWA, iOS-style UI, works offline) | `mobile/` | `https://adarshmalpeddiwar-beep.github.io/quickfab/mobile/` |
+
+The site root (`index.html`) sends phones to `mobile/` and computers to `web/`.
+
+### Install the phone app
+
+- **iPhone / iPad (Safari):** open the `mobile/` link → Share → **Add to Home Screen**.
+- **Android (Chrome):** open the link → tap **Install** in the app (or menu ⋮ → **Install app**). Once installed, QuickFab also appears in the Android share sheet for `.step` files.
+
+After the first launch the app, the STEP reader and the sample parts are cached, so it opens and quotes without a network connection. Rate edits on the phone are stored on that phone, separately from the web version.
+
 ## Run
 
 It is a static site. Serve the `web/` folder with any static server (the STEP reader loads a `.wasm` file, so `file://` will not work):
@@ -22,7 +38,9 @@ python3 -m http.server 8080
 # open http://localhost:8080
 ```
 
-three.js r160 is loaded from jsDelivr, so the page needs internet access for the 3D view.
+three.js r160 is loaded from jsDelivr, so the web page needs internet access for the 3D view. The phone app bundles three.js in `mobile/vendor/`.
+
+Serve `mobile/` the same way to try the phone app; the service worker only runs on `localhost` or HTTPS.
 
 ## Layout
 
@@ -32,12 +50,19 @@ src/app.html        UI, rate editor, case-study card, three.js simulation (engin
 tools/build.py      inlines src/engine.js into src/app.html -> web/index.html
 tools/engine-test.js headless run of the planner on the sample parts
 web/                deployable static site (index.html, occt-import-js reader + wasm, sample STEP files)
+src/mobile.html     phone app UI (tab bar: Part, Simulate, Quote, Rates)
+src/mobile-sw.js    phone app service worker (offline cache, Android share target)
+tools/build_mobile.py builds mobile/ from src/mobile.html + the engine + the simulator and case-study code in src/app.html
+mobile/             deployable PWA (index.html, manifest, sw.js, icons, vendored three.js, STEP reader, samples)
 ```
+
+The phone app has its own interface but runs the same engine and simulator as the web app: `build_mobile.py` copies them in at build time, so a fix in `src/engine.js` or the simulator in `src/app.html` reaches both after rebuilding both.
 
 After editing anything in `src/`:
 
 ```bash
 python3 tools/build.py
+python3 tools/build_mobile.py /path/to/three.js-r160   # path needed only to refresh mobile/vendor
 node tools/engine-test.js
 ```
 
@@ -55,5 +80,5 @@ Seeded October 2026 from Indian supplier and job-work listings, for example: alu
 ## Third-party
 
 - [occt-import-js](https://github.com/kovacsv/occt-import-js) (Open CASCADE, LGPL-2.1) — STEP reading in WebAssembly. Licences in `web/license.*.txt`.
-- [three.js](https://threejs.org) (MIT), loaded from CDN.
+- [three.js](https://threejs.org) (MIT), loaded from CDN on the web; bundled in `mobile/vendor/` for the phone app.
 - `web/as1-oc-214.stp`, `web/sg1-c5-214.stp`: CAx-IF test models, shipped with occt-import-js.
